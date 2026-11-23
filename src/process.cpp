@@ -50,7 +50,7 @@ static std::wstring widen(const std::string& text) {
     return value;
 }
 static std::wstring quote_windows(const std::wstring& arg) {
-    if (arg.find_first_of(L" \t\n\v\"") == std::wstring::npos) return arg;
+    if (!arg.empty() && arg.find_first_of(L" \t\n\v\"") == std::wstring::npos) return arg;
     std::wstring out = L"\"";
     unsigned int slashes = 0;
     for (wchar_t c : arg) {
