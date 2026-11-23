@@ -239,8 +239,15 @@ int main() {
         CHECK(!damaged.ok);
         CHECK(!damaged.errors.empty());
 
+        const fs::path neighbouring_version = data_directory / "versions" / "1.20.4.backup";
+        fs::create_directories(neighbouring_version);
+        {
+            std::ofstream sentinel(neighbouring_version / "keep.txt");
+            sentinel << "not an import backup";
+        }
         const ImportSummary replaced = import_jar(jar, data_directory, "1.20.4", true);
         CHECK(replaced.version_id == "1.20.4");
+        CHECK(fs::is_regular_file(neighbouring_version / "keep.txt"));
         CHECK(verify_import("1.20.4", data_directory).ok);
 
         const fs::path external_file = temporary / "external-copy.bin";
