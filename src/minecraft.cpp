@@ -64,27 +64,27 @@ fs::path path_from_utf8(const std::string& value) {
 std::string read_file(const fs::path& path) {
     std::error_code size_error;
     const std::uint64_t size = fs::file_size(path, size_error);
-    if (size_error) throw std::runtime_error("Cannot inspect file: " + path.string());
+    if (size_error) throw std::runtime_error("Cannot inspect file: " + path_to_utf8(path));
     if (size > 32ULL * 1024ULL * 1024ULL)
-        throw std::runtime_error("Refusing to read a file larger than 32 MiB: " + path.string());
+        throw std::runtime_error("Refusing to read a file larger than 32 MiB: " + path_to_utf8(path));
 
     std::ifstream in(path, std::ios::binary);
-    if (!in) throw std::runtime_error("Cannot open file: " + path.string());
+    if (!in) throw std::runtime_error("Cannot open file: " + path_to_utf8(path));
     std::ostringstream buffer;
     buffer << in.rdbuf();
-    if (!in.good() && !in.eof()) throw std::runtime_error("Cannot read file: " + path.string());
+    if (!in.good() && !in.eof()) throw std::runtime_error("Cannot read file: " + path_to_utf8(path));
     const std::string content = buffer.str();
     if (content.size() > 32ULL * 1024ULL * 1024ULL)
-        throw std::runtime_error("File grew beyond the 32 MiB read limit: " + path.string());
+        throw std::runtime_error("File grew beyond the 32 MiB read limit: " + path_to_utf8(path));
     return content;
 }
 
 void write_file(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) throw std::runtime_error("Cannot write file: " + path.string());
+    if (!out) throw std::runtime_error("Cannot write file: " + path_to_utf8(path));
     out << content;
-    if (!out) throw std::runtime_error("Failed writing file: " + path.string());
+    if (!out) throw std::runtime_error("Failed writing file: " + path_to_utf8(path));
 }
 
 bool valid_java_class_name(const std::string& name) {
@@ -545,8 +545,8 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
     const fs::path source = version_source_folder(minecraft_dir, id);
     const fs::path json_path = metadata_override.empty() ? source / (id + ".json") : metadata_override;
     const fs::path jar_path = jar_override.empty() ? source / (id + ".jar") : jar_override;
-    if (!fs::exists(json_path)) throw std::runtime_error("Version metadata not found: " + json_path.string());
-    if (!fs::exists(jar_path)) throw std::runtime_error("Version JAR not found: " + jar_path.string());
+    if (!fs::exists(json_path)) throw std::runtime_error("Version metadata not found: " + json_path_to_utf8(path));
+    if (!fs::exists(jar_path)) throw std::runtime_error("Version JAR not found: " + path_to_utf8(jar_path));
 
     const Json metadata = Json::parse(read_file(json_path));
     if (!metadata.is_object()) throw std::runtime_error("Version metadata must be a JSON object");
@@ -590,13 +590,13 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
 
     const fs::file_status backup_status = fs::symlink_status(backup, status_error);
     if (!status_error && backup_status.type() != fs::file_type::not_found)
-        throw std::runtime_error("An interrupted-import backup already exists: " + backup.string() +
+        throw std::runtime_error("An interrupted-import backup already exists: " + path_to_utf8(backup) +
                                  ". Recover or rename it before importing this version again.");
     if (status_error && status_error != std::errc::no_such_file_or_directory)
         throw std::runtime_error("Cannot inspect import backup path: " + status_error.message());
 
     if (!fs::create_directory(staging))
-        throw std::runtime_error("Cannot create a unique import staging directory: " + staging.string());
+        throw std::runtime_error("Cannot create a unique import staging directory: " + path_to_utf8(staging));
 
     try {
         fs::copy_file(jar_path, staging / "client.jar", fs::copy_options::none);
@@ -624,7 +624,7 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
                 fs::rename(backup, target, restore_error);
                 if (restore_error)
                     throw std::runtime_error("New profile could not be published and the previous profile "
-                                             "could not be restored. Backup remains at " + backup.string() +
+                                             "could not be restored. Backup remains at " + path_to_utf8(backup) +
                                              ". Restore error: " + restore_error.message());
             }
             throw;
@@ -635,7 +635,7 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
             fs::remove_all(backup, cleanup_error);
             if (cleanup_error)
                 std::cerr << "Warning: imported successfully, but the previous profile backup remains at "
-                          << backup.string() << ": " << cleanup_error.message() << '\n';
+                          << path_to_utf8(backup) << ": " << cleanup_error.message() << '\n';
         }
 
         std::cout << "Imported Minecraft " << id << " successfully.\n"
@@ -668,8 +668,8 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         ? path_from_utf8(read_file(profile / "source-game-dir.txt")) : minecraft_dir_arg;
     const fs::path libraries_dir = minecraft_dir / "libraries";
     const fs::path assets_dir = minecraft_dir / "assets";
-    if (!fs::exists(libraries_dir)) throw std::runtime_error("Minecraft libraries folder not found: " + libraries_dir.string());
-    if (!fs::exists(assets_dir)) throw std::runtime_error("Minecraft assets folder not found: " + assets_dir.string());
+    if (!fs::exists(libraries_dir)) throw std::runtime_error("Minecraft libraries folder not found: " + path_to_utf8(libraries_dir));
+    if (!fs::exists(assets_dir)) throw std::runtime_error("Minecraft assets folder not found: " + path_to_utf8(assets_dir));
     const Json* metadata_id_value = metadata.get("id");
     if (!metadata_id_value || !metadata_id_value->is_string() || metadata_id_value->string() != id)
         throw std::runtime_error("Imported profile metadata id does not match its profile");
