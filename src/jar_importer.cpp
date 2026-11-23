@@ -325,6 +325,12 @@ Manifest read_manifest(const fs::path& directory) {
     if (manifest_size > 32ULL * 1024ULL * 1024ULL)
         throw std::runtime_error("Import manifest exceeds the 32 MiB safety limit");
 
+    std::error_code manifest_size_error;
+    const std::uint64_t manifest_size = fs::file_size(manifest_path, manifest_size_error);
+    if (manifest_size_error || manifest_size > 32ULL * 1024ULL * 1024ULL)
+        throw std::runtime_error("Import manifest is missing or exceeds the 32 MiB safety limit: " +
+                                 directory.string());
+
     std::ifstream input(manifest_path, std::ios::binary);
     if (!input) throw std::runtime_error("Import manifest is missing: " + directory.string());
 
@@ -338,6 +344,7 @@ Manifest read_manifest(const fs::path& directory) {
     bool got_source = false;
     bool got_count = false;
     bool got_bytes = false;
+    std::set<std::string> manifest_paths;
 
     while (std::getline(input, line)) {
         if (!line.empty() && line.back() == '\r') line.pop_back();
