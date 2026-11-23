@@ -101,6 +101,8 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
     const auto end = in.tellg();
     if (end < 22) throw std::runtime_error("File is too small to be a ZIP/JAR archive");
     const auto file_size = static_cast<std::uint64_t>(end);
+    if (file_size > kMaxArchiveSize)
+        throw std::runtime_error("JAR exceeds the 2 GiB archive safety limit");
     const std::size_t tail_size = static_cast<std::size_t>(std::min<std::uint64_t>(file_size, 22ULL + 65535ULL));
     std::vector<unsigned char> tail(tail_size);
     in.seekg(static_cast<std::streamoff>(file_size - tail_size));
@@ -119,12 +121,16 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
     const auto directory_offset = u32(tail, eocd + 16);
     if (count == 0xFFFFU || directory_size == 0xFFFFFFFFU || directory_offset == 0xFFFFFFFFU)
         throw std::runtime_error("ZIP64 archives are not supported in this build");
-    if (static_cast<std::uint64_t>(directory_offset) + directory_size > file_size)
+    const std::uint64_t eocd_absolute = file_size - tail_size + eocd;
+    const std::uint64_t central_end =
+        static_cast<std::uint64_t>(directory_offset) + directory_size;
+    if (central_end > eocd_absolute)
         throw std::runtime_error("Invalid ZIP central-directory bounds");
 
     in.clear();
     in.seekg(static_cast<std::streamoff>(directory_offset));
     entries_.reserve(count);
+    std::set<std::string> names;
     for (std::uint32_t i = 0; i < count; ++i) {
         std::array<unsigned char, 46> header{};
         in.read(reinterpret_cast<char*>(header.data()), static_cast<std::streamsize>(header.size()));
@@ -132,6 +138,7 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
         std::vector<unsigned char> h(header.begin(), header.end());
         if (u32(h, 0) != kCentral) throw std::runtime_error("Invalid ZIP central-directory entry");
         Entry e;
+        e.made_by = u16(h, 4);
         e.flags = u16(h, 8);
         e.method = u16(h, 10);
         e.crc = u32(h, 16);
@@ -140,16 +147,38 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
         const auto name_len = u16(h, 28);
         const auto extra_len = u16(h, 30);
         const auto comment_len = u16(h, 32);
+        e.external_attributes = u32(h, 38);
         e.local_header_offset = u32(h, 42);
         e.name = read_text(in, name_len);
         in.seekg(static_cast<std::streamoff>(extra_len + comment_len), std::ios::cur);
-        if (!in) throw std::runtime_error("Invalid ZIP central-directory lengths");
-        e.directory = !e.name.empty() && (e.name.back() == '/' || e.name.back() == '\\');
-        if ((e.flags & 0x0001U) != 0) throw std::runtime_error("Encrypted JAR entries are not supported");
-        if (e.method != 0 && e.method != 8) throw std::runtime_error("Unsupported ZIP compression method " + std::to_string(e.method) + " in " + e.name);
-        if (e.uncompressed_size > kMaxEntrySize) throw std::runtime_error("JAR entry exceeds 1 GiB safety limit: " + e.name);
+        if (!in || static_cast<std::uint64_t>(in.tellg()) > central_end)
+            throw std::runtime_error("Invalid ZIP central-directory lengths");
+
+        e.name = safe_archive_name(std::move(e.name), e.directory);
+        if (!names.insert(lower_ascii(e.name)).second)
+            throw std::runtime_error("JAR contains duplicate or case-colliding path: " + e.name);
+
+        const unsigned int host_os = e.made_by >> 8U;
+        const std::uint32_t unix_type = (e.external_attributes >> 16U) & 0170000U;
+        if (host_os == 3U) {
+            if (unix_type == 0120000U)
+                throw std::runtime_error("JAR contains a symbolic link, which is not extracted");
+            if (unix_type != 0U && unix_type != 0100000U && unix_type != 0040000U)
+                throw std::runtime_error("JAR contains a special Unix file type, which is not extracted");
+            if (unix_type != 0U && ((unix_type == 0040000U) != e.directory))
+                throw std::runtime_error("JAR entry type does not match its path: " + e.name);
+        }
+
+        if ((e.flags & 0x0001U) != 0 || (e.flags & 0x0040U) != 0 || (e.flags & 0x2000U) != 0)
+            throw std::runtime_error("Encrypted JAR entries are not supported");
+        if (e.method != 0 && e.method != 8)
+            throw std::runtime_error("Unsupported ZIP compression method " + std::to_string(e.method) + " in " + e.name);
+        if (e.compressed_size > kMaxEntrySize || e.uncompressed_size > kMaxEntrySize)
+            throw std::runtime_error("JAR entry exceeds the 128 MiB safety limit: " + e.name);
         entries_.push_back(std::move(e));
     }
+    if (static_cast<std::uint64_t>(in.tellg()) != central_end)
+        throw std::runtime_error("ZIP central-directory size does not match its entries");
 }
 
 std::size_t ZipArchive::count_files() const {
