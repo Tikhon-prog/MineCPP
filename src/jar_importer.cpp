@@ -247,6 +247,13 @@ std::uint64_t parse_u64(const std::string& value, const char* field) {
 }
 
 std::uint32_t parse_hex32(const std::string& value) {
+    if (value.size() != 8U || !std::all_of(value.begin(), value.end(), [](char ch) {
+            return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                   (ch >= 'A' && ch <= 'F');
+        })) {
+        throw std::runtime_error("Invalid CRC in import manifest");
+    }
+
     std::size_t consumed = 0;
     unsigned long parsed = 0;
     try { parsed = std::stoul(value, &consumed, 16); }
@@ -270,6 +277,11 @@ std::vector<std::string> split_tabs(const std::string& line) {
 
 Manifest read_manifest(const fs::path& directory) {
     const fs::path manifest_path = directory / std::string(kManifestName);
+    std::error_code status_error;
+    const fs::file_status manifest_status = fs::symlink_status(manifest_path, status_error);
+    if (status_error || fs::is_symlink(manifest_status) || !fs::is_regular_file(manifest_status))
+        throw std::runtime_error("Import manifest must be a regular, non-symlink file");
+
     std::error_code size_error;
     const std::uint64_t manifest_size = fs::file_size(manifest_path, size_error);
     if (size_error)
@@ -283,10 +295,6 @@ Manifest read_manifest(const fs::path& directory) {
     std::string line;
     if (!std::getline(input, line) || line != "MINECPP_IMPORT\t1")
         throw std::runtime_error("Unsupported or damaged MineCPP import manifest");
-
-    const fs::file_status manifest_status = fs::symlink_status(manifest_path, size_error);
-    if (size_error || fs::is_symlink(manifest_status) || !fs::is_regular_file(manifest_status))
-        throw std::runtime_error("Import manifest must be a regular, non-symlink file");
 
     Manifest manifest;
     std::set<std::string> manifest_paths;
@@ -813,6 +821,14 @@ VerificationResult verify_import(const std::string& version_id, const fs::path& 
     }
 
     const fs::path directory = data_directory / "versions" / version_id;
+    std::error_code directory_error;
+    const fs::file_status directory_status = fs::symlink_status(directory, directory_error);
+    if (directory_error || fs::is_symlink(directory_status) ||
+        !fs::is_directory(directory_status)) {
+        result.errors.push_back("Imported version directory is missing or is a symlink");
+        return result;
+    }
+
     try {
         const Manifest manifest = read_manifest(directory);
         if (manifest.version_id != version_id)
