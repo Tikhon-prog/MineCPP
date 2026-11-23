@@ -6,7 +6,10 @@
 
 #include <cassert>
 #include <cstddef>
+#include <chrono>
+#include <filesystem>
 #include <iostream>
+#include <thread>
 #include <vector>
 
 using namespace minecpp;
@@ -64,6 +67,40 @@ int main() {
 
     one.blocks[snapshot_index(5, 10, 4)] = Block::Dirt;
     assert(build_chunk_mesh(one).size() == 60U);
+
+    const auto save_path = std::filesystem::temp_directory_path() / "minecpp-world-tests.mcw";
+    std::error_code remove_error;
+    std::filesystem::remove(save_path, remove_error);
+    {
+        World world(24680U, 2);
+        bool ready = false;
+        for (int attempt = 0; attempt < 10000 && !ready; ++attempt) {
+            world.update_streaming(8, 8);
+            world.pump_jobs();
+            ready = world.has_spawn_chunk();
+            if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        assert(ready);
+        const int ground = World::terrain_height(world.seed(), 1, 1);
+        assert(world.set_block(1, ground + 1, 1, Block::Wood));
+        world.save(save_path);
+    }
+    {
+        World restored(1U, 2);
+        restored.load(save_path);
+        assert(restored.seed() == 24680U);
+        bool ready = false;
+        for (int attempt = 0; attempt < 10000 && !ready; ++attempt) {
+            restored.update_streaming(8, 8);
+            restored.pump_jobs();
+            ready = restored.has_spawn_chunk();
+            if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        assert(ready);
+        const int ground = World::terrain_height(restored.seed(), 1, 1);
+        assert(restored.get_block(1, ground + 1, 1) == Block::Wood);
+    }
+    std::filesystem::remove(save_path, remove_error);
 
     std::cout << "MineCPP world tests passed\n";
     return 0;
