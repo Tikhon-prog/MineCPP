@@ -32,7 +32,7 @@ std::string read_text(std::ifstream& in, std::size_t n) {
 }
 std::filesystem::path safe_relative_path(std::string name) {
     std::replace(name.begin(), name.end(), '\\', '/');
-    if (name.empty() || name.find('\0') != std::string::npos || name.front() == '/' || (name.size() > 1 && name[1] == ':'))
+    if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos || name.front() == '/')
         throw std::runtime_error("Unsafe absolute or invalid path in JAR: " + name);
     std::filesystem::path relative;
     std::size_t start = 0;
@@ -143,14 +143,17 @@ std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) co
             data = std::move(compressed);
         } else {
             z_stream stream{};
-            stream.next_in = compressed.data();
+            unsigned char empty_output = 0;
+            stream.next_in = compressed.empty() ? Z_NULL : compressed.data();
             stream.avail_in = static_cast<uInt>(compressed.size());
-            stream.next_out = data.data();
-            stream.avail_out = static_cast<uInt>(data.size());
+            stream.next_out = data.empty() ? &empty_output : data.data();
+            stream.avail_out = data.empty() ? 1U : static_cast<uInt>(data.size());
             if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) throw std::runtime_error("Cannot initialize ZIP decompressor");
             const int result = inflate(&stream, Z_FINISH);
+            const auto total_out = stream.total_out;
+            const auto total_in = stream.total_in;
             inflateEnd(&stream);
-            if (result != Z_STREAM_END || stream.total_out != entry.uncompressed_size)
+            if (result != Z_STREAM_END || total_out != entry.uncompressed_size || total_in != entry.compressed_size)
                 throw std::runtime_error("Cannot decompress JAR entry: " + entry.name);
         }
         const auto actual_crc = crc32(0L, data.empty() ? Z_NULL : data.data(), static_cast<uInt>(data.size()));
