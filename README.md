@@ -166,4 +166,4 @@ GitHub Actions builds and runs tests on Linux, Windows, and macOS.
 
 ## Roadmap
 
-See docs/ROADMAP.md for the planned launcher, resource-preparation, and native-client milestones.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the importer design and manifest format. See [docs/ROADMAP.md](docs/ROADMAP.md) for the planned launcher, resource-preparation, and native-client milestones.
