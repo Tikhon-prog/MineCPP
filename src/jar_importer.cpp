@@ -619,6 +619,13 @@ bool valid_version_id(const std::string& value) {
             (ch >= '0' && ch <= '9') || ch == '.' || ch == '_' || ch == '+' || ch == '-';
         if (!valid) return false;
     }
+
+    std::string device_name = lower_ascii(value.substr(0, value.find('.')));
+    const bool numbered_device = device_name.size() == 4U &&
+        (device_name.rfind("com", 0) == 0 || device_name.rfind("lpt", 0) == 0) &&
+        device_name[3] >= '1' && device_name[3] <= '9';
+    if (device_name == "con" || device_name == "prn" || device_name == "aux" ||
+        device_name == "nul" || numbered_device) return false;
     return value != "." && value != "..";
 }
 
@@ -630,7 +637,17 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
     if (!fs::is_regular_file(absolute_jar))
         throw std::runtime_error("Input JAR does not exist or is not a regular file: " + absolute_jar.string());
 
-    if (version_id.empty()) version_id = source_filename_utf8(absolute_jar);
+    if (version_id.empty()) {
+        version_id = source_filename_utf8(absolute_jar);
+        if (version_id.size() >= 4U &&
+            lower_ascii(version_id.substr(version_id.size() - 4U)) == ".jar") {
+            version_id.resize(version_id.size() - 4U);
+        }
+        if (version_id == "client" || version_id == "minecraft") {
+            const std::string parent_id = path_utf8(absolute_jar.parent_path().filename());
+            if (valid_version_id(parent_id)) version_id = parent_id;
+        }
+    }
     if (version_id.size() >= 4U && lower_ascii(version_id.substr(version_id.size() - 4U)) == ".jar")
         version_id.resize(version_id.size() - 4U);
     if (!valid_version_id(version_id))
