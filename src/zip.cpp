@@ -110,7 +110,17 @@ std::size_t ZipArchive::count_files() const {
 }
 
 std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) const {
-    std::filesystem::create_directories(destination);
+    const auto destination_absolute = std::filesystem::absolute(destination);
+    std::filesystem::create_directories(destination_absolute);
+    const auto destination_root = std::filesystem::weakly_canonical(destination_absolute);
+    const auto is_within_root = [](const std::filesystem::path& root, const std::filesystem::path& candidate) {
+        auto root_it = root.begin();
+        auto candidate_it = candidate.begin();
+        for (; root_it != root.end() && candidate_it != candidate.end(); ++root_it, ++candidate_it) {
+            if (*root_it != *candidate_it) return false;
+        }
+        return root_it == root.end();
+    };
     std::ifstream in(file_, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot reopen JAR: " + file_.string());
     std::size_t extracted = 0;
@@ -118,8 +128,14 @@ std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) co
     for (const Entry& entry : entries_) {
         const auto relative = safe_relative_path(entry.name);
         if (relative.empty()) continue;
-        const auto output = destination / relative;
-        if (entry.directory) { std::filesystem::create_directories(output); continue; }
+        const auto output = destination_absolute / relative;
+        if (entry.directory) {
+            std::filesystem::create_directories(output);
+            const auto resolved_directory = std::filesystem::weakly_canonical(output);
+            if (!is_within_root(destination_root, resolved_directory))
+                throw std::runtime_error("JAR extraction path escapes destination through a symlink: " + entry.name);
+            continue;
+        }
         total_uncompressed += entry.uncompressed_size;
         if (total_uncompressed > 4ULL * 1024ULL * 1024ULL * 1024ULL)
             throw std::runtime_error("JAR extraction exceeds 4 GiB safety limit");
@@ -159,6 +175,13 @@ std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) co
         const auto actual_crc = crc32(0L, data.empty() ? Z_NULL : data.data(), static_cast<uInt>(data.size()));
         if (actual_crc != entry.crc) throw std::runtime_error("CRC check failed for JAR entry: " + entry.name);
         std::filesystem::create_directories(output.parent_path());
+        const auto resolved_parent = std::filesystem::weakly_canonical(output.parent_path());
+        if (!is_within_root(destination_root, resolved_parent))
+            throw std::runtime_error("JAR extraction path escapes destination through a symlink: " + entry.name);
+        std::error_code status_error;
+        const auto output_status = std::filesystem::symlink_status(output, status_error);
+        if (!status_error && std::filesystem::is_symlink(output_status))
+            throw std::runtime_error("Refusing to overwrite a symlink during JAR extraction: " + output.string());
         std::ofstream out(output, std::ios::binary | std::ios::trunc);
         if (!out) throw std::runtime_error("Cannot create extracted file: " + output.string());
         if (!data.empty()) out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
