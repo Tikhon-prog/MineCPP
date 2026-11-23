@@ -553,7 +553,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
             argument.rfind("-cp=", 0) == 0 || argument.rfind("--class-path=", 0) == 0)
             has_classpath = true;
     }
-    if (!has_classpath) { arguments.emplace_back("-cp"); arguments.push_back(classpath); }
+    if (!has_classpath) { arguments.emplace_back("-cp"); arguments.push_back(classpath_value); }
 
     if (const Json* logging = metadata.get("logging")) {
         if (const Json* client = logging->get("client")) {
