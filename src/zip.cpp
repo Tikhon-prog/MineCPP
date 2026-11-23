@@ -220,6 +220,8 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
             throw std::runtime_error("Unsupported ZIP compression method " + std::to_string(e.method) + " in " + e.name);
         if (e.compressed_size > kMaxEntrySize || e.uncompressed_size > kMaxEntrySize)
             throw std::runtime_error("JAR entry exceeds the 128 MiB safety limit: " + e.name);
+        if (e.directory && (e.compressed_size != 0U || e.uncompressed_size != 0U))
+            throw std::runtime_error("JAR directory entries must not contain file data: " + e.name);
         entries_.push_back(std::move(e));
     }
     if (static_cast<std::uint64_t>(in.tellg()) != central_end)
