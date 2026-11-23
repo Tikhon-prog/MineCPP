@@ -19,6 +19,8 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 #ifdef _WIN32
@@ -83,6 +85,68 @@ bool valid_java_class_name(const std::string& name) {
         previous_dot = c == '.';
     }
     return true;
+}
+
+fs::path safe_relative_path(std::string value, const char* description) {
+    if (value.empty() || value.find('\0') != std::string::npos)
+        throw std::runtime_error(std::string("Invalid empty or NUL-containing ") + description + " path");
+    for (char& ch : value) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte < 0x20U || byte == 0x7fU)
+            throw std::runtime_error(std::string("Control character in ") + description + " path");
+        if (ch == '\\') ch = '/';
+    }
+    if (value.front() == '/' || value.rfind("//", 0) == 0)
+        throw std::runtime_error(std::string("Absolute ") + description + " path is not allowed");
+
+    std::size_t begin = 0;
+    while (begin <= value.size()) {
+        const std::size_t end = value.find('/', begin);
+        const std::string part = value.substr(begin,
+            (end == std::string::npos ? value.size() : end) - begin);
+        if (part.empty() || part == "." || part == ".." ||
+            part.find(':') != std::string::npos || part.back() == '.' || part.back() == ' ' ||
+            part.find_first_of("<>\"|?*") != std::string::npos) {
+            throw std::runtime_error(std::string("Unsafe ") + description + " path: " + value);
+        }
+
+        std::string device;
+        for (const unsigned char c : part.substr(0, part.find('.')))
+            device.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c));
+        const bool numbered_device = device.size() == 4U &&
+            (device.rfind("com", 0) == 0 || device.rfind("lpt", 0) == 0) &&
+            device[3] >= '1' && device[3] <= '9';
+        if (device == "con" || device == "prn" || device == "aux" || device == "nul" ||
+            device == "conin$" || device == "conout$" || numbered_device) {
+            throw std::runtime_error(std::string("Reserved Windows name in ") + description + " path");
+        }
+
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    return path_from_utf8(value);
+}
+
+bool path_is_within(const fs::path& root, const fs::path& candidate) {
+    auto root_it = root.begin();
+    auto candidate_it = candidate.begin();
+    for (; root_it != root.end() && candidate_it != candidate.end(); ++root_it, ++candidate_it) {
+        if (*root_it != *candidate_it) return false;
+    }
+    return root_it == root.end();
+}
+
+fs::path safe_local_child(const fs::path& root, const std::string& relative,
+                          const char* description) {
+    const fs::path child = root / safe_relative_path(relative, description);
+    std::error_code error;
+    const fs::path canonical_root = fs::weakly_canonical(root, error);
+    if (error) throw std::runtime_error("Cannot resolve " + std::string(description) + " root: " + error.message());
+    const fs::path canonical_child = fs::weakly_canonical(child, error);
+    if (error) throw std::runtime_error("Cannot resolve " + std::string(description) + " path: " + error.message());
+    if (!path_is_within(canonical_root, canonical_child))
+        throw std::runtime_error(std::string(description) + " path escapes its Minecraft directory: " + relative);
+    return child;
 }
 
 bool valid_id(const std::string& id) {
@@ -191,16 +255,37 @@ std::string maven_path(const std::string& coordinate) {
         extension = value.substr(at + 1);
         value.erase(at);
     }
+
+    const auto safe_token = [](const std::string& token, bool allow_dots) {
+        if (token.empty() || token == "." || token == ".." ||
+            token.front() == '.' || token.back() == '.') return false;
+        for (const unsigned char c : token) {
+            const bool valid = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '+' ||
+                (allow_dots && c == '.');
+            if (!valid) return false;
+        }
+        return true;
+    };
+
+    if (!safe_token(extension, false)) return {};
     std::vector<std::string> parts;
     std::stringstream input(value);
     std::string part;
     while (std::getline(input, part, ':')) parts.push_back(part);
-    if (parts.size() < 3) return {};
+    if (parts.size() < 3U || parts.size() > 4U ||
+        !safe_token(parts[1], true) || !safe_token(parts[2], true) ||
+        (parts.size() == 4U && !safe_token(parts[3], true))) return {};
+
     std::string path;
     std::stringstream group(parts[0]);
-    while (std::getline(group, part, '.')) path += part + "/";
+    while (std::getline(group, part, '.')) {
+        if (!safe_token(part, false)) return {};
+        path += part + "/";
+    }
+    if (path.empty()) return {};
     path += parts[1] + "/" + parts[2] + "/" + parts[1] + "-" + parts[2];
-    if (parts.size() > 3) path += "-" + parts[3];
+    if (parts.size() == 4U) path += "-" + parts[3];
     return path + "." + extension;
 }
 
