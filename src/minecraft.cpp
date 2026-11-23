@@ -839,7 +839,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
             const Json* file = client->get("file");
             if (!flag.empty() && file) {
                 auto log_vars = vars;
-                log_vars["path"] = path_to_utf8(assets_dir / "log_configs" / file->get_string("id"));
+                log_vars["path"] = path_to_utf8(safe_local_child(assets_dir, "log_configs/" + file->get_string("id"), "logging configuration"));
                 arguments.push_back(substitute(flag, log_vars));
             }
         }
