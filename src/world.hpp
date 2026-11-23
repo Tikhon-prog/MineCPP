@@ -1,6 +1,6 @@
 #pragma once
 
-#include "chunk.hpp"
+#include "mesh.hpp"
 #include "thread_pool.hpp"
 
 #include <cstdint>
@@ -12,8 +12,6 @@
 #include <vector>
 
 namespace minecpp {
-
-struct ChunkSnapshot;
 
 class World {
 public:
