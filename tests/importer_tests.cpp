@@ -239,6 +239,28 @@ int main() {
         CHECK(replaced.version_id == "1.20.4");
         CHECK(verify_import("1.20.4", data_directory).ok);
 
+        const fs::path external_file = temporary / "external-copy.bin";
+        {
+            std::ofstream external(external_file, std::ios::binary);
+            external << "{\"menu.singleplayer\":\"Singleplayer\"}";
+        }
+        const fs::path imported_file = replaced.version_directory / "client" /
+            "assets/minecraft/lang/en_us.json";
+        fs::remove(imported_file);
+        std::error_code symlink_error;
+        fs::create_symlink(external_file, imported_file, symlink_error);
+        if (!symlink_error) {
+            CHECK(!verify_import("1.20.4", data_directory).ok);
+            fs::remove(imported_file);
+            const ImportSummary restored = import_jar(jar, data_directory, "1.20.4", true);
+            CHECK(verify_import("1.20.4", data_directory).ok);
+            CHECK(restored.version_id == "1.20.4");
+        } else {
+            const ImportSummary restored = import_jar(jar, data_directory, "1.20.4", true);
+            CHECK(verify_import("1.20.4", data_directory).ok);
+            CHECK(restored.version_id == "1.20.4");
+        }
+
         const fs::path malicious_jar = temporary / "malicious.jar";
         write_zip(malicious_jar, {
             {"../../escaped.txt", "must never be extracted", false, false},
