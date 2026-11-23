@@ -23,6 +23,7 @@ struct ZipEntry {
     std::string contents;
     bool deflated = true;
     bool corrupt_crc = false;
+    bool symlink = false;
 };
 
 struct CentralEntry {
@@ -32,6 +33,7 @@ struct CentralEntry {
     std::uint32_t uncompressed_size = 0;
     std::uint16_t method = 0;
     std::uint32_t local_offset = 0;
+    std::uint32_t external_attributes = 0;
 };
 
 void append_u16(std::string& output, std::uint16_t value) {
@@ -73,6 +75,7 @@ void write_zip(const fs::path& path, const std::vector<ZipEntry>& entries) {
         record.name = entry.name;
         record.method = entry.deflated ? 8U : 0U;
         record.uncompressed_size = static_cast<std::uint32_t>(entry.contents.size());
+        record.external_attributes = entry.symlink ? 0xA1FF0000U : 0x81A40000U;
         record.crc = static_cast<std::uint32_t>(::crc32(
             0L, reinterpret_cast<const Bytef*>(entry.contents.data()),
             static_cast<uInt>(entry.contents.size())));
@@ -115,7 +118,7 @@ void write_zip(const fs::path& path, const std::vector<ZipEntry>& entries) {
         append_u16(bytes, 0U);
         append_u16(bytes, 0U);
         append_u16(bytes, 0U);
-        append_u32(bytes, 0x81a40000U);
+        append_u32(bytes, entry.external_attributes);
         append_u32(bytes, entry.local_offset);
         bytes += entry.name;
     }
@@ -245,6 +248,15 @@ int main() {
             (void)import_jar(malicious_jar, data_directory, "1.20.5");
         });
         CHECK(!fs::exists(data_directory / "versions" / "escaped.txt"));
+
+        const fs::path symlink_jar = temporary / "symlink.jar";
+        write_zip(symlink_jar, {
+            {"linked.class", "target", false, false, true},
+            {"net/minecraft/client/main/Main.class", "class", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(symlink_jar, data_directory, "1.20.8");
+        });
 
         const fs::path device_jar = temporary / "windows-device.jar";
         write_zip(device_jar, {
