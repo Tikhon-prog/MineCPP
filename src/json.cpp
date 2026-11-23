@@ -1,10 +1,8 @@
 #include "json.hpp"
 
-#include <charconv>
 #include <cmath>
 #include <cstdlib>
 #include <cstdint>
-#include <limits>
 #include <string_view>
 
 namespace minecpp {
@@ -78,19 +76,19 @@ private:
     void expect(char c) { if (!consume(c)) fail(std::string("expected '") + c + "'"); }
 
     static void append_utf8(std::string& out, std::uint32_t cp) {
-        if (cp <= 0x7F) out.push_back(static_cast<char>(cp));
-        else if (cp <= 0x7FF) {
+        if (cp <= 0x7FU) out.push_back(static_cast<char>(cp));
+        else if (cp <= 0x7FFU) {
             out.push_back(static_cast<char>(0xC0U | (cp >> 6U)));
-            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU));
-        } else if (cp <= 0xFFFF) {
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
+        } else if (cp <= 0xFFFFU) {
             out.push_back(static_cast<char>(0xE0U | (cp >> 12U)));
-            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU));
-            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
         } else {
-            out.push_back(static_cast<char>(0xF0U | (cp >> 18U));
-            out.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU));
-            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU));
-            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU));
+            out.push_back(static_cast<char>(0xF0U | (cp >> 18U)));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 12U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | ((cp >> 6U) & 0x3FU)));
+            out.push_back(static_cast<char>(0x80U | (cp & 0x3FU)));
         }
     }
 
@@ -129,10 +127,15 @@ private:
                 case 't': out.push_back('\t'); break;
                 case 'u': {
                     std::uint32_t cp = hex4();
-                    if (cp >= 0xD800U && cp <= 0xDBFFU && pos_ + 6 <= input_.size() && input_[pos_] == '\\' && input_[pos_ + 1] == 'u') {
+                    if (cp >= 0xD800U && cp <= 0xDBFFU) {
+                        if (pos_ + 6 > input_.size() || input_[pos_] != '\\' || input_[pos_ + 1] != 'u')
+                            fail("high surrogate without low surrogate");
                         pos_ += 2;
                         const std::uint32_t low = hex4();
-                        if (low >= 0xDC00U && low <= 0xDFFFU) cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
+                        if (low < 0xDC00U || low > 0xDFFFU) fail("invalid low surrogate");
+                        cp = 0x10000U + ((cp - 0xD800U) << 10U) + (low - 0xDC00U);
+                    } else if (cp >= 0xDC00U && cp <= 0xDFFFU) {
+                        fail("unexpected low surrogate");
                     }
                     append_utf8(out, cp);
                     break;
@@ -156,7 +159,8 @@ private:
             while (pos_ < input_.size() && input_[pos_] >= '0' && input_[pos_] <= '9') ++pos_;
         }
         if (pos_ < input_.size() && (input_[pos_] == 'e' || input_[pos_] == 'E')) {
-            ++pos_; if (pos_ < input_.size() && (input_[pos_] == '+' || input_[pos_] == '-')) ++pos_;
+            ++pos_;
+            if (pos_ < input_.size() && (input_[pos_] == '+' || input_[pos_] == '-')) ++pos_;
             if (pos_ >= input_.size() || input_[pos_] < '0' || input_[pos_] > '9') fail("invalid exponent");
             while (pos_ < input_.size() && input_[pos_] >= '0' && input_[pos_] <= '9') ++pos_;
         }
@@ -182,7 +186,8 @@ private:
         expect('{'); skip_ws(); Json::Object values;
         if (consume('}')) return Json(Json::Value(std::move(values)));
         while (true) {
-            skip_ws(); if (pos_ >= input_.size() || input_[pos_] != '"') fail("object key must be a string");
+            skip_ws();
+            if (pos_ >= input_.size() || input_[pos_] != '"') fail("object key must be a string");
             std::string key = parse_string(); skip_ws(); expect(':'); skip_ws();
             values.insert_or_assign(std::move(key), parse_value()); skip_ws();
             if (consume('}')) break;
@@ -200,7 +205,8 @@ private:
             case 't': if (input_.compare(pos_, 4, "true") == 0) { pos_ += 4; return Json(Json::Value(true)); } break;
             case 'f': if (input_.compare(pos_, 5, "false") == 0) { pos_ += 5; return Json(Json::Value(false)); } break;
             case 'n': if (input_.compare(pos_, 4, "null") == 0) { pos_ += 4; return Json(); } break;
-            default: if (input_[pos_] == '-' || (input_[pos_] >= '0' && input_[pos_] <= '9')) return parse_number();
+            default:
+                if (input_[pos_] == '-' || (input_[pos_] >= '0' && input_[pos_] <= '9')) return parse_number();
         }
         fail("invalid value");
     }
