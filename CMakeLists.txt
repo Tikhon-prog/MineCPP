@@ -69,6 +69,12 @@ if(MINECPP_BUILD_TESTS)
     target_link_libraries(minecpp_import_tests PRIVATE minecpp_import)
     add_test(NAME minecpp_import_tests COMMAND minecpp_import_tests)
     add_test(NAME minecpp_launcher_help COMMAND minecpp-launcher --help)
+    add_test(NAME minecpp_launcher_version COMMAND minecpp-launcher --version)
+    add_test(NAME minecpp_launcher_list_empty
+        COMMAND minecpp-launcher list --data-dir "${CMAKE_CURRENT_BINARY_DIR}/empty-import-list")
+    add_test(NAME minecpp_launcher_verify_missing
+        COMMAND minecpp-launcher verify missing --data-dir "${CMAKE_CURRENT_BINARY_DIR}/missing-import")
+    set_tests_properties(minecpp_launcher_verify_missing PROPERTIES WILL_FAIL TRUE)
 
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
