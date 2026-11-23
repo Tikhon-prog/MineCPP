@@ -91,15 +91,26 @@ MineCPP uses C++20, CMake, GLFW, OpenGL, threads, and zlib. The importer and its
 
 ### Linux / Lubuntu
 
+To build only the offline launcher/importer (no OpenGL or GLFW required):
+
 ~~~bash
 sudo apt update
-sudo apt install build-essential cmake libglfw3-dev libgl1-mesa-dev zlib1g-dev
+sudo apt install build-essential cmake zlib1g-dev
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMINECPP_BUILD_VOXEL_PROTOTYPE=OFF
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 
 ./build/minecpp-launcher --help
+~~~
+
+To build both the launcher and the experimental voxel prototype, install the graphics dependencies and leave the CMake option enabled:
+
+~~~bash
+sudo apt install libglfw3-dev libgl1-mesa-dev
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMINECPP_BUILD_VOXEL_PROTOTYPE=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
 ~~~
 
 ### Windows
