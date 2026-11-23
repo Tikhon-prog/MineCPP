@@ -713,13 +713,6 @@ int launch_version(const std::string& id, const std::string& username, const fs:
             }
         }
     }
-    if (!missing.empty()) {
-        std::ostringstream message;
-        message << "Required local libraries are missing (MineCPP does not download files):";
-        for (const auto& item : missing) message << "\n  " << item;
-        throw std::runtime_error(message.str());
-    }
-
     const std::string assets_id = metadata.get("assetIndex")
         ? metadata.get("assetIndex")->get_string("id") : metadata.get_string("assets", id);
     fs::path asset_index;
@@ -743,6 +736,65 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         {"classpath_separator", classpath_separator()}, {"user_properties", "{}"},
         {"resolution_width", "854"}, {"resolution_height", "480"}, {"clientid", ""}, {"auth_xuid", ""}
     };
+
+    if (!asset_index.empty()) {
+        const Json asset_index_json = Json::parse(read_file(asset_index));
+        const Json* objects = asset_index_json.get("objects");
+        if (!objects || !objects->is_object())
+            throw std::runtime_error("Local asset index does not contain an objects map");
+
+        std::size_t missing_assets = 0;
+        for (const auto& [logical_name, object] : objects->object()) {
+            (void)logical_name;
+            if (!object.is_object())
+                throw std::runtime_error("Asset index contains a malformed object record");
+            const Json* hash_value = object.get("hash");
+            const Json* size_value = object.get("size");
+            if (!hash_value || !hash_value->is_string() ||
+                !size_value || !size_value->is_number()) {
+                throw std::runtime_error("Asset index contains an object without a hash or size");
+            }
+
+            std::string hash = hash_value->string();
+            if (hash.size() != 40U ||
+                !std::all_of(hash.begin(), hash.end(), [](unsigned char ch) {
+                    return (ch >= '0' && ch <= '9') || (ch >= 'a' && ch <= 'f') ||
+                           (ch >= 'A' && ch <= 'F');
+                })) {
+                throw std::runtime_error("Asset index contains an invalid SHA-1 hash");
+            }
+            std::transform(hash.begin(), hash.end(), hash.begin(), [](unsigned char ch) {
+                return ch >= 'A' && ch <= 'F' ? static_cast<char>(ch - 'A' + 'a') :
+                                                static_cast<char>(ch);
+            });
+
+            const double raw_size = size_value->number(-1.0);
+            if (raw_size < 0.0 || raw_size > 2147483648.0 ||
+                static_cast<double>(static_cast<std::uint64_t>(raw_size)) != raw_size) {
+                throw std::runtime_error("Asset index contains an invalid object size");
+            }
+            const std::uint64_t expected_size = static_cast<std::uint64_t>(raw_size);
+            const fs::path object_path =
+                safe_local_child(assets_dir, "objects/" + hash.substr(0, 2) + "/" + hash,
+                                 "asset object");
+            std::error_code object_error;
+            const std::uint64_t actual_size = fs::file_size(object_path, object_error);
+            if (object_error || !fs::is_regular_file(object_path) || actual_size != expected_size) {
+                ++missing_assets;
+                if (missing.size() < 50U)
+                    missing.push_back(path_to_utf8(object_path) + " (missing or wrong size)");
+            }
+        }
+        if (missing_assets != 0U)
+            std::cerr << "Missing or damaged asset objects: " << missing_assets << '\n';
+    }
+
+    if (!missing.empty()) {
+        std::ostringstream message;
+        message << missing.size() << " required local files are missing:";
+        for (const auto& item : missing) message << "\n  - " << item;
+        throw std::runtime_error(message.str());
+    }
 
     std::vector<std::string> arguments;
     const Json* sections = metadata.get("arguments");
