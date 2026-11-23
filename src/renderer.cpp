@@ -321,16 +321,19 @@ void Game::render() {
     const Vec3 eye = player_.position + Vec3{0.0F, 1.62F, 0.0F};
     glTranslatef(-eye.x, -eye.y, -eye.z);
 
+    // OpenGL 1.1 client arrays avoid a glColor/glVertex call for every vertex.
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_COLOR_ARRAY);
     for (const auto& [position, chunk] : world_.chunks()) {
         (void)position;
         if (!chunk.mesh_ready || chunk.mesh.empty()) continue;
-        glBegin(GL_TRIANGLES);
-        for (const MeshVertex& vertex : chunk.mesh) {
-            glColor3f(vertex.r, vertex.g, vertex.b);
-            glVertex3f(vertex.x, vertex.y, vertex.z);
-        }
-        glEnd();
+        const auto stride = static_cast<GLsizei>(sizeof(MeshVertex));
+        glVertexPointer(3, GL_FLOAT, stride, static_cast<const void*>(&chunk.mesh.front().x));
+        glColorPointer(3, GL_FLOAT, stride, static_cast<const void*>(&chunk.mesh.front().r));
+        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(chunk.mesh.size()));
     }
+    glDisableClientState(GL_COLOR_ARRAY);
+    glDisableClientState(GL_VERTEX_ARRAY);
 
     glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
