@@ -186,7 +186,8 @@ bool valid_id(const std::string& id) {
         (device.rfind("com", 0) == 0 || device.rfind("lpt", 0) == 0) &&
         device[3] >= '1' && device[3] <= '9';
     return device != "con" && device != "prn" && device != "aux" &&
-           device != "nul" && !numbered_device;
+           device != "nul" && device != "conin$" && device != "conout$" &&
+           !numbered_device;
 }
 
 std::string current_os() {
