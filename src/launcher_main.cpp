@@ -1,5 +1,6 @@
 #include "jar_importer.hpp"
 
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
