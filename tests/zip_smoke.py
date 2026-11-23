@@ -15,7 +15,6 @@ if out.exists():
         if item.is_file():
             item.unlink()
         elif item.is_dir():
-            import shutil
             shutil.rmtree(item)
 with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
     jar.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n")
