@@ -75,6 +75,7 @@ void write_zip(const fs::path& path, const std::vector<ZipEntry>& entries) {
         CentralEntry record;
         record.name = entry.name;
         record.method = entry.deflated ? 8U : 0U;
+        record.external_attributes = entry.unix_mode << 16U;
         record.uncompressed_size = static_cast<std::uint32_t>(entry.contents.size());
         record.external_attributes = entry.symlink ? 0xA1FF0000U : 0x81A40000U;
         record.crc = static_cast<std::uint32_t>(::crc32(
@@ -321,6 +322,15 @@ int main() {
         });
         expect_throw([&] {
             (void)import_jar(device_jar, data_directory, "1.20.7");
+        });
+
+        const fs::path symlink_entry_jar = temporary / "symlink-entry.jar";
+        write_zip(symlink_entry_jar, {
+            {"link.txt", "outside-target", false, false, 0120777U},
+            {"net/minecraft/client/main/Main.class", "class", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(symlink_entry_jar, data_directory, "1.20.9");
         });
 
         const fs::path corrupt_jar = temporary / "corrupt.jar";
