@@ -687,14 +687,18 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
         throw std::runtime_error("Cannot resolve the import destination: " + canonical_error.message());
     const fs::path source_relative_to_destination =
         canonical_source.lexically_relative(canonical_destination);
-    if (source_relative_to_destination.empty()) {
+    if (canonical_source == canonical_destination) {
         throw std::runtime_error("Import destination resolves to the source JAR location");
     }
-    const auto first_relative_component = source_relative_to_destination.begin();
-    if (first_relative_component != source_relative_to_destination.end() &&
-        *first_relative_component != ".." && !source_relative_to_destination.is_absolute()) {
-        throw std::runtime_error(
-            "Unsafe import destination: it contains the source JAR. Choose a separate --data-dir.");
+    // An empty relative path can also mean that Windows paths are on different drives.
+    // In that case the paths cannot contain one another, so it is safe to proceed.
+    if (!source_relative_to_destination.empty()) {
+        const auto first_relative_component = source_relative_to_destination.begin();
+        if (first_relative_component != source_relative_to_destination.end() &&
+            *first_relative_component != ".." && !source_relative_to_destination.is_absolute()) {
+            throw std::runtime_error(
+                "Unsafe import destination: it contains the source JAR. Choose a separate --data-dir.");
+        }
     }
 
     fs::create_directories(versions_directory);
