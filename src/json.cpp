@@ -50,7 +50,7 @@ public:
 
     Json parse() {
         skip_ws();
-        Json result = parse_value();
+        Json result = parse_value(0);
         skip_ws();
         if (pos_ != input_.size()) fail("unexpected characters after JSON value");
         return result;
@@ -59,6 +59,9 @@ public:
 private:
     const std::string& input_;
     std::size_t pos_ = 0;
+    std::size_t node_count_ = 0;
+    static constexpr std::size_t kMaxDepth = 64;
+    static constexpr std::size_t kMaxNodes = 1000000;
 
     [[noreturn]] void fail(const std::string& message) const {
         throw std::runtime_error("JSON parse error at byte " + std::to_string(pos_) + ": " + message);
@@ -113,7 +116,39 @@ private:
             const unsigned char c = static_cast<unsigned char>(input_[pos_++]);
             if (c == '"') return out;
             if (c < 0x20U) fail("control character in string");
-            if (c != '\\') { out.push_back(static_cast<char>(c)); continue; }
+            if (c != '\\') {
+                if (c < 0x80U) {
+                    out.push_back(static_cast<char>(c));
+                    continue;
+                }
+
+                const std::size_t start = pos_ - 1U;
+                std::size_t length = 0;
+                std::uint32_t codepoint = 0;
+                std::uint32_t minimum = 0;
+                if (c >= 0xC2U && c <= 0xDFU) {
+                    length = 2; codepoint = c & 0x1FU; minimum = 0x80U;
+                } else if (c >= 0xE0U && c <= 0xEFU) {
+                    length = 3; codepoint = c & 0x0FU; minimum = 0x800U;
+                } else if (c >= 0xF0U && c <= 0xF4U) {
+                    length = 4; codepoint = c & 0x07U; minimum = 0x10000U;
+                } else {
+                    fail("invalid UTF-8 leading byte in string");
+                }
+                if (start + length > input_.size()) fail("truncated UTF-8 sequence in string");
+                for (std::size_t offset = 1; offset < length; ++offset) {
+                    const auto next = static_cast<unsigned char>(input_[start + offset]);
+                    if ((next & 0xC0U) != 0x80U) fail("invalid UTF-8 continuation byte in string");
+                    codepoint = (codepoint << 6U) | (next & 0x3FU);
+                }
+                if (codepoint < minimum || codepoint > 0x10FFFFU ||
+                    (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
+                    fail("invalid UTF-8 code point in string");
+                }
+                out.append(input_, start, length);
+                pos_ = start + length;
+                continue;
+            }
             if (pos_ >= input_.size()) fail("incomplete escape");
             const char e = input_[pos_++];
             switch (e) {
@@ -171,36 +206,41 @@ private:
         return Json(Json::Value(value));
     }
 
-    Json parse_array() {
+    Json parse_array(std::size_t depth) {
         expect('['); skip_ws(); Json::Array values;
         if (consume(']')) return Json(Json::Value(std::move(values)));
         while (true) {
-            skip_ws(); values.push_back(parse_value()); skip_ws();
+            skip_ws(); values.push_back(parse_value(depth + 1U)); skip_ws();
             if (consume(']')) break;
             expect(',');
         }
         return Json(Json::Value(std::move(values)));
     }
 
-    Json parse_object() {
+    Json parse_object(std::size_t depth) {
         expect('{'); skip_ws(); Json::Object values;
         if (consume('}')) return Json(Json::Value(std::move(values)));
         while (true) {
             skip_ws();
             if (pos_ >= input_.size() || input_[pos_] != '"') fail("object key must be a string");
             std::string key = parse_string(); skip_ws(); expect(':'); skip_ws();
-            values.insert_or_assign(std::move(key), parse_value()); skip_ws();
+            Json value = parse_value(depth + 1U);
+            if (!values.emplace(std::move(key), std::move(value)).second)
+                fail("duplicate object key");
+            skip_ws();
             if (consume('}')) break;
             expect(',');
         }
         return Json(Json::Value(std::move(values)));
     }
 
-    Json parse_value() {
+    Json parse_value(std::size_t depth) {
+        if (depth > kMaxDepth) fail("maximum JSON nesting depth exceeded");
+        if (++node_count_ > kMaxNodes) fail("maximum JSON value count exceeded");
         if (pos_ >= input_.size()) fail("expected value");
         switch (input_[pos_]) {
-            case '{': return parse_object();
-            case '[': return parse_array();
+            case '{': return parse_object(depth);
+            case '[': return parse_array(depth);
             case '"': return Json(Json::Value(parse_string()));
             case 't': if (input_.compare(pos_, 4, "true") == 0) { pos_ += 4; return Json(Json::Value(true)); } break;
             case 'f': if (input_.compare(pos_, 5, "false") == 0) { pos_ += 5; return Json(Json::Value(false)); } break;
