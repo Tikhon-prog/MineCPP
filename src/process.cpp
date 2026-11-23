@@ -27,7 +27,10 @@ std::string find_java() {
 #else
             "java";
 #endif
-        if (std::filesystem::exists(candidate)) return candidate.string();
+        if (std::filesystem::exists(candidate)) {
+            const auto encoded = candidate.u8string();
+            return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+        }
     }
 #ifdef _WIN32
     return "java.exe";
