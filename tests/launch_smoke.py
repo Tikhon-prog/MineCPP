@@ -14,7 +14,7 @@ exe = pathlib.Path(sys.argv[1])
 root = pathlib.Path(sys.argv[2])
 shutil.rmtree(root, ignore_errors=True)
 version = "1.20.4"
-minecraft = root / "minecraft"
+minecraft = root / "Minecraft-Тест"
 version_dir = minecraft / "versions" / version
 version_dir.mkdir(parents=True)
 libraries_dir = minecraft / "libraries"
@@ -59,7 +59,7 @@ metadata = {
 with zipfile.ZipFile(version_dir / f"{version}.jar", "w", zipfile.ZIP_DEFLATED) as jar:
     jar.writestr("net/minecraft/client/main/Main.class", b"synthetic-class")
 
-data = root / "minecpp-data"
+data = root / "MineCPP-Данные"
 subprocess.run([str(exe), "import", version, "--minecraft-dir", str(minecraft), "--data-dir", str(data)], check=True, capture_output=True, text=True)
 profile = data / "profiles" / version
 assert (profile / "client.jar").is_file()
