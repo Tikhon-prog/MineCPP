@@ -24,8 +24,10 @@ public:
 
 private:
     struct Entry : ZipEntryInfo {
+        std::uint16_t made_by = 0;
         std::uint16_t flags = 0;
         std::uint32_t crc = 0;
+        std::uint32_t external_attributes = 0;
         std::uint32_t local_header_offset = 0;
     };
     std::filesystem::path file_;
