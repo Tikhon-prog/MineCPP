@@ -228,11 +228,21 @@ std::vector<std::uint8_t> inflate_raw(
 }
 
 std::uint64_t parse_u64(const std::string& value, const char* field) {
+    if (value.empty() || !std::all_of(value.begin(), value.end(), [](char ch) {
+            return ch >= '0' && ch <= '9';
+        })) {
+        throw std::runtime_error(std::string("Invalid manifest field: ") + field);
+    }
+
     std::size_t consumed = 0;
     unsigned long long parsed = 0;
-    try { parsed = std::stoull(value, &consumed, 10); }
-    catch (...) { throw std::runtime_error(std::string("Invalid manifest field: ") + field); }
-    if (consumed != value.size()) throw std::runtime_error(std::string("Invalid manifest field: ") + field);
+    try {
+        parsed = std::stoull(value, &consumed, 10);
+    } catch (...) {
+        throw std::runtime_error(std::string("Invalid manifest field: ") + field);
+    }
+    if (consumed != value.size())
+        throw std::runtime_error(std::string("Invalid manifest field: ") + field);
     return static_cast<std::uint64_t>(parsed);
 }
 
@@ -259,7 +269,15 @@ std::vector<std::string> split_tabs(const std::string& line) {
 }
 
 Manifest read_manifest(const fs::path& directory) {
-    std::ifstream input(directory / std::string(kManifestName), std::ios::binary);
+    const fs::path manifest_path = directory / std::string(kManifestName);
+    std::error_code size_error;
+    const std::uint64_t manifest_size = fs::file_size(manifest_path, size_error);
+    if (size_error)
+        throw std::runtime_error("Import manifest is missing or unreadable: " + directory.string());
+    if (manifest_size > 32ULL * 1024ULL * 1024ULL)
+        throw std::runtime_error("Import manifest exceeds the 32 MiB safety limit");
+
+    std::ifstream input(manifest_path, std::ios::binary);
     if (!input) throw std::runtime_error("Import manifest is missing: " + directory.string());
 
     std::string line;
@@ -277,25 +295,70 @@ Manifest read_manifest(const fs::path& directory) {
         const auto fields = split_tabs(line);
         if (fields.empty()) continue;
         if (fields[0] == "VERSION" && fields.size() == 2) {
+            if (got_version) throw std::runtime_error("Duplicate VERSION field in import manifest");
             manifest.version_id = percent_decode(fields[1]);
             got_version = true;
         } else if (fields[0] == "SOURCE" && fields.size() == 2) {
+            if (got_source) throw std::runtime_error("Duplicate SOURCE field in import manifest");
             manifest.source_filename = percent_decode(fields[1]);
+            if (manifest.source_filename.empty() ||
+                manifest.source_filename.find_first_of("/\\\\") != std::string::npos ||
+                manifest.source_filename == "." || manifest.source_filename == "..") {
+                throw std::runtime_error("Invalid source filename in import manifest");
+            }
             got_source = true;
         } else if (fields[0] == "FILES" && fields.size() == 2) {
-            manifest.file_count = static_cast<std::size_t>(parse_u64(fields[1], "FILES"));
+            if (got_count) throw std::runtime_error("Duplicate FILES field in import manifest");
+            const std::uint64_t count = parse_u64(fields[1], "FILES");
+            if (count > static_cast<std::uint64_t>(kMaxEntries) + 1ULL)
+                throw std::runtime_error("Import manifest contains too many entries");
+            manifest.file_count = static_cast<std::size_t>(count);
             got_count = true;
         } else if (fields[0] == "BYTES" && fields.size() == 2) {
+            if (got_bytes) throw std::runtime_error("Duplicate BYTES field in import manifest");
             manifest.total_bytes = parse_u64(fields[1], "BYTES");
+            if (manifest.total_bytes > kMaxExpandedBytes + 16ULL * 1024ULL * 1024ULL)
+                throw std::runtime_error("Import manifest total size exceeds the safety limit");
             got_bytes = true;
         } else if (fields[0] == "ENTRY" && fields.size() == 4) {
+            if (manifest.files.size() >= static_cast<std::size_t>(kMaxEntries) + 1U)
+                throw std::runtime_error("Import manifest contains too many entries");
             FileRecord record;
             record.size = parse_u64(fields[1], "ENTRY size");
             record.crc = parse_hex32(fields[2]);
             record.relative_path = percent_decode(fields[3]);
+
             bool is_directory = false;
-            if (safe_archive_path(record.relative_path, is_directory) != record.relative_path || is_directory)
+            const std::string normalized = safe_archive_path(record.relative_path, is_directory);
+            if (normalized != record.relative_path || is_directory)
                 throw std::runtime_error("Unsafe path in import manifest");
+            if (record.relative_path != "metadata/version.json" &&
+                record.relative_path.rfind("client/", 0) != 0) {
+                throw std::runtime_error("Import manifest entry is outside an allowed directory");
+            }
+            if (record.relative_path.rfind("client/", 0) == 0) {
+                const std::string inner_path = record.relative_path.substr(7U);
+                bool inner_is_directory = false;
+                if (inner_path.empty() ||
+                    safe_archive_path(inner_path, inner_is_directory) != inner_path ||
+                    inner_is_directory) {
+                    throw std::runtime_error("Unsafe client entry in import manifest");
+                }
+            }
+            if (record.size > kMaxEntryBytes &&
+                record.relative_path != "metadata/version.json") {
+                throw std::runtime_error("Import manifest entry exceeds the per-file size limit");
+            }
+            if (record.relative_path == "metadata/version.json" &&
+                record.size > 16ULL * 1024ULL * 1024ULL) {
+                throw std::runtime_error("Version metadata exceeds the 16 MiB safety limit");
+            }
+            const auto duplicate = std::find_if(manifest.files.begin(), manifest.files.end(),
+                [&](const FileRecord& existing) {
+                    return lower_ascii(existing.relative_path) == lower_ascii(record.relative_path);
+                });
+            if (duplicate != manifest.files.end())
+                throw std::runtime_error("Duplicate path in import manifest");
             manifest.files.push_back(std::move(record));
         } else {
             throw std::runtime_error("Unknown or malformed line in import manifest");
@@ -303,10 +366,22 @@ Manifest read_manifest(const fs::path& directory) {
     }
 
     if (!got_version || !got_source || !got_count || !got_bytes ||
-        manifest.file_count != manifest.files.size())
+        manifest.file_count != manifest.files.size()) {
         throw std::runtime_error("Import manifest is incomplete");
+    }
     if (!valid_version_id(manifest.version_id))
         throw std::runtime_error("Import manifest contains an invalid version identifier");
+
+    std::uint64_t summed_bytes = 0;
+    for (const FileRecord& record : manifest.files) {
+        if (summed_bytes > manifest.total_bytes ||
+            record.size > manifest.total_bytes - summed_bytes) {
+            throw std::runtime_error("Import manifest entry sizes exceed its total byte count");
+        }
+        summed_bytes += record.size;
+    }
+    if (summed_bytes != manifest.total_bytes)
+        throw std::runtime_error("Import manifest total byte count is inconsistent");
     return manifest;
 }
 
