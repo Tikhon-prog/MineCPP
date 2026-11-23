@@ -9,8 +9,8 @@ on:
 
 jobs:
   build:
-    name: \${{ matrix.os }}
-    runs-on: \${{ matrix.os }}
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -41,20 +41,20 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-Linux-\${{ runner.arch }}
+          name: MineCPP-Launcher-Linux-${{ runner.arch }}
           path: build/minecpp-launcher
           if-no-files-found: error
       - name: Upload macOS launcher
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-macOS-\${{ runner.arch }}
+          name: MineCPP-Launcher-macOS-${{ runner.arch }}
           path: build/minecpp-launcher
           if-no-files-found: error
       - name: Upload Windows launcher
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-Windows-\${{ runner.arch }}
+          name: MineCPP-Launcher-Windows-${{ runner.arch }}
           path: build/Release/minecpp-launcher.exe
           if-no-files-found: error
