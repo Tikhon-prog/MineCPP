@@ -383,6 +383,41 @@ void Game::render() {
     glVertex2f(-0.018F, 0.0F); glVertex2f(0.018F, 0.0F);
     glVertex2f(0.0F, -0.032F); glVertex2f(0.0F, 0.032F);
     glEnd();
+
+    // Six-slot visual hotbar; the selected item is outlined in gold.
+    constexpr float slot_width = 0.09F;
+    constexpr float slot_gap = 0.018F;
+    constexpr float slot_bottom = -0.91F;
+    constexpr float slot_top = -0.77F;
+    constexpr float total_width = slot_width * 6.0F + slot_gap * 5.0F;
+    const float hotbar_left = -total_width * 0.5F;
+    glColor3f(0.08F, 0.08F, 0.08F);
+    glBegin(GL_QUADS);
+    glVertex2f(hotbar_left - 0.025F, slot_bottom - 0.025F);
+    glVertex2f(hotbar_left + total_width + 0.025F, slot_bottom - 0.025F);
+    glVertex2f(hotbar_left + total_width + 0.025F, slot_top + 0.025F);
+    glVertex2f(hotbar_left - 0.025F, slot_top + 0.025F);
+    glEnd();
+    for (std::size_t i = 0; i < kHotbar.size(); ++i) {
+        const float x0 = hotbar_left + static_cast<float>(i) * (slot_width + slot_gap);
+        const float x1 = x0 + slot_width;
+        glColor3f(static_cast<int>(i) == selected_block_ ? 1.0F : 0.42F,
+                  static_cast<int>(i) == selected_block_ ? 0.78F : 0.42F,
+                  static_cast<int>(i) == selected_block_ ? 0.16F : 0.42F);
+        glBegin(GL_QUADS);
+        glVertex2f(x0, slot_bottom); glVertex2f(x1, slot_bottom);
+        glVertex2f(x1, slot_top); glVertex2f(x0, slot_top);
+        glEnd();
+        const Color3 color = block_color(kHotbar[i]);
+        glColor3f(color.r, color.g, color.b);
+        glBegin(GL_QUADS);
+        glVertex2f(x0 + 0.012F, slot_bottom + 0.018F);
+        glVertex2f(x1 - 0.012F, slot_bottom + 0.018F);
+        glVertex2f(x1 - 0.012F, slot_top - 0.018F);
+        glVertex2f(x0 + 0.012F, slot_top - 0.018F);
+        glEnd();
+    }
+
     glPopMatrix();
     glMatrixMode(GL_PROJECTION);
     glPopMatrix();
