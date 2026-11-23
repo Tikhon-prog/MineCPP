@@ -677,7 +677,17 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
 
         bool copied_metadata = false;
         const fs::path metadata_source = absolute_jar.parent_path() / path_from_utf8(version_id + ".json");
-        if (fs::is_regular_file(metadata_source)) {
+        std::error_code metadata_status_error;
+        const fs::file_status metadata_status =
+            fs::symlink_status(metadata_source, metadata_status_error);
+        if (metadata_status_error &&
+            metadata_status_error != std::errc::no_such_file_or_directory) {
+            throw std::runtime_error("Cannot inspect version JSON metadata: " +
+                                     metadata_status_error.message());
+        }
+        if (!metadata_status_error && fs::exists(metadata_status)) {
+            if (fs::is_symlink(metadata_status) || !fs::is_regular_file(metadata_status))
+                throw std::runtime_error("Version JSON metadata must be a regular, non-symlink file");
             const std::uint64_t metadata_size = fs::file_size(metadata_source);
             if (metadata_size > 16U * 1024U * 1024U)
                 throw std::runtime_error("Version JSON metadata exceeds the 16 MiB safety limit");
