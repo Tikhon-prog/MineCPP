@@ -7,11 +7,14 @@ MineCPP has two connected but distinct tracks: an offline launcher/preparation t
 - C++20 command-line launcher executable.
 - Import an existing local Minecraft client JAR.
 - Extract ZIP Store and DEFLATE entries without modifying the source JAR.
-- Reject path traversal, absolute paths, symbolic links, duplicate paths, encrypted entries, unsupported methods, and oversized archives.
+- Reject path traversal, absolute paths, symbolic links and special Unix file types, case-colliding paths, encrypted entries, unsupported methods, and oversized archives.
 - Copy the matching version JSON file when it is adjacent to the JAR.
-- Write a local file manifest with sizes and CRC-32 checksums.
+- Write a bounded, strictly parsed local file manifest with sizes and CRC-32 checksums.
+- Verify that imported paths contain no symbolic links and cannot be redirected outside the version directory.
+- Prevent replacement of a destination directory that contains the source JAR.
+- Detect generic `client.jar` files from their containing version folder.
 - List imported versions and verify their extracted files.
-- Automated ZIP fixtures for valid, corrupted, and malicious archives.
+- Automated ZIP fixtures for stored/DEFLATE data, corrupt CRCs, malicious paths, symlinks, duplicate paths, and invalid manifests; CLI smoke tests.
 - Preserve the existing standalone voxel sandbox as an experimental engine target.
 
 ## 0.2.x — Minecraft installation metadata
