@@ -75,6 +75,28 @@ assert "--accessToken 0" in run.stdout, run.stdout
 assert '--clientId ""' in run.stdout, run.stdout
 assert "example-lib-1.0.jar" in run.stdout, run.stdout
 assert (profile / "natives" / native_filename).read_bytes() == b"native-binary-placeholder"
+
+# The JSON reader rejects ambiguous duplicate keys, invalid UTF-8 and excessive nesting.
+bad_minecraft = root / "bad-json-minecraft"
+bad_version_dir = bad_minecraft / "versions" / version
+bad_version_dir.mkdir(parents=True)
+shutil.copy2(version_dir / f"{version}.jar", bad_version_dir / f"{version}.jar")
+
+def assert_bad_metadata_rejected(label: str, payload: bytes) -> None:
+    (bad_version_dir / f"{version}.json").write_bytes(payload)
+    bad_data = root / f"bad-json-data-{label}"
+    result = subprocess.run(
+        [str(exe), "import", version, "--minecraft-dir", str(bad_minecraft), "--data-dir", str(bad_data)],
+        capture_output=True, text=True)
+    assert result.returncode != 0, f"{label} version metadata was unexpectedly accepted"
+    assert not (bad_data / "profiles" / version).exists()
+
+valid_prefix = b'{"id":"1.20.4","mainClass":"net.minecraft.client.main.Main"'
+assert_bad_metadata_rejected("duplicate", valid_prefix + b',"id":"1.20.4"}')
+assert_bad_metadata_rejected("utf8", valid_prefix + b',"display":"\xff"}')
+deep_value = b'[' * 70 + b'0' + b']' * 70
+assert_bad_metadata_rejected("depth", valid_prefix + b',"nested":' + deep_value + b'}')
+
 expected = uuid.UUID(bytes=hashlib.md5(b"OfflinePlayer:Tikhon").digest(), version=3)
 assert str(expected) in run.stdout, (str(expected), run.stdout)
 assert "https://" not in run.stdout and "http://" not in run.stdout
