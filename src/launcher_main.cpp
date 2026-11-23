@@ -15,6 +15,10 @@ using minecpp::launcher::VerificationResult;
 
 namespace {
 
+void print_version() {
+    std::cout << "MineCPP Launcher 0.1.0\n";
+}
+
 void print_help() {
     std::cout
         << "MineCPP Launcher 0.1.0 — offline Minecraft JAR importer\n\n"
@@ -26,9 +30,11 @@ void print_help() {
         << "  --id ID          Version identifier (defaults to the JAR filename)\n"
         << "  --data-dir PATH  Import directory (default: minecpp-data)\n"
         << "  --force          Replace an already imported version safely\n"
+        << "  --version        Show launcher version\n"
         << "  -h, --help       Show this help\n\n"
         << "Examples:\n"
         << "  minecpp-launcher import ~/.minecraft/versions/1.20.4/1.20.4.jar\n"
+        << "  minecpp-launcher import ~/.minecraft/versions/1.20.4/client.jar\n"
         << "  minecpp-launcher list\n"
         << "  minecpp-launcher verify 1.20.4\n\n"
         << "This first release works offline. It extracts a supplied JAR and records\n"
@@ -142,6 +148,10 @@ int main(int argc, char** argv) {
     try {
         if (argc < 2 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
             print_help();
+            return 0;
+        }
+        if (std::string(argv[1]) == "--version" || std::string(argv[1]) == "version") {
+            print_version();
             return 0;
         }
 
