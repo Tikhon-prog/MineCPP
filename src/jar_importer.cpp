@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 #include <zlib.h>
@@ -411,7 +412,8 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
         std::vector<char> variable(static_cast<std::size_t>(variable_size));
         if (!variable.empty())
             read_at(input, cursor + header.size(), variable.data(), variable.size());
-        std::string raw_name(variable.data(), name_length);
+        std::string raw_name;
+        if (name_length > 0) raw_name.assign(variable.data(), name_length);
         bool is_directory = false;
         const std::string relative_name = safe_archive_path(std::move(raw_name), is_directory);
         const std::string collision_key = lower_ascii(relative_name);
