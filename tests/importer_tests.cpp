@@ -285,6 +285,17 @@ int main() {
             (void)import_jar(corrupt_jar, data_directory, "1.20.6");
         });
 
+        const fs::path duplicate_jar = temporary / "case-collision.jar";
+        write_zip(duplicate_jar, {
+            {"net/minecraft/client/main/Main.class", "class", false, false},
+            {"Assets/thing.bin", "first", false, false},
+            {"assets/THING.bin", "second", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(duplicate_jar, data_directory, "1.20.8");
+        });
+        CHECK(!fs::exists(data_directory / "versions" / "1.20.8"));
+
         fs::remove_all(temporary);
         std::cout << "MineCPP importer tests passed\n";
         return 0;
