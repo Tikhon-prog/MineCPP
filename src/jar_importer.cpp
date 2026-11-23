@@ -164,6 +164,7 @@ std::string percent_decode(std::string_view value) {
 }
 
 std::uint32_t crc_of(const std::uint8_t* data, std::size_t size) {
+    if (size == 0) return static_cast<std::uint32_t>(::crc32(0L, Z_NULL, 0));
     const uLong value = ::crc32(0L, data, static_cast<uInt>(size));
     return static_cast<std::uint32_t>(value);
 }
@@ -490,9 +491,13 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
     return records;
 }
 
-std::string source_filename_utf8(const fs::path& path) {
-    const auto value = path.filename().u8string();
+std::string path_utf8(const fs::path& path) {
+    const auto value = path.generic_u8string();
     return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
+
+std::string source_filename_utf8(const fs::path& path) {
+    return path_utf8(path.filename());
 }
 
 } // namespace
@@ -533,7 +538,8 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
     const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
     fs::path staging_directory = final_directory;
     staging_directory += ".staging-" + std::to_string(tick);
-    fs::create_directories(staging_directory);
+    if (!fs::create_directory(staging_directory))
+        throw std::runtime_error("Could not reserve a unique staging directory for this import");
 
     try {
         std::uint64_t jar_bytes = 0;
@@ -568,6 +574,8 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
         backup_directory += ".backup";
         bool backed_up = false;
         if (fs::exists(final_directory)) {
+            if (!overwrite)
+                throw std::runtime_error("This version was imported by another process while extraction was running");
             if (fs::exists(backup_directory))
                 throw std::runtime_error("Backup path already exists; remove it before using --force: " +
                                          backup_directory.string());
@@ -581,6 +589,9 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
             if (backed_up) {
                 std::error_code restore_error;
                 fs::rename(backup_directory, final_directory, restore_error);
+                if (restore_error)
+                    throw std::runtime_error("Could not publish the new import; the previous version remains at " +
+                                             backup_directory.string() + ". Restore failed: " + restore_error.message());
             }
             throw;
         }
