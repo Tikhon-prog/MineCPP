@@ -9,8 +9,8 @@ on:
 
 jobs:
   build:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: \${{ matrix.os }}
+    runs-on: \${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -19,13 +19,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libgl1-mesa-dev
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libgl1-mesa-dev zlib1g-dev
       - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install glfw
+        run: brew install glfw zlib
       - name: Install Windows dependencies
         if: runner.os == 'Windows'
-        run: vcpkg install glfw3:x64-windows-static
+        run: vcpkg install glfw3:x64-windows-static zlib:x64-windows-static
       - name: Configure Windows
         if: runner.os == 'Windows'
         shell: pwsh
@@ -37,24 +37,24 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Upload Linux binary
+      - name: Upload Linux launcher
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Linux-${{ runner.arch }}
-          path: build/minecpp
+          name: MineCPP-Launcher-Linux-\${{ runner.arch }}
+          path: build/minecpp-launcher
           if-no-files-found: error
-      - name: Upload macOS binary
+      - name: Upload macOS launcher
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-macOS-${{ runner.arch }}
-          path: build/minecpp
+          name: MineCPP-Launcher-macOS-\${{ runner.arch }}
+          path: build/minecpp-launcher
           if-no-files-found: error
-      - name: Upload Windows binary
+      - name: Upload Windows launcher
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Windows-${{ runner.arch }}
-          path: build/Release/minecpp.exe
+          name: MineCPP-Launcher-Windows-\${{ runner.arch }}
+          path: build/Release/minecpp-launcher.exe
           if-no-files-found: error
