@@ -1,6 +1,7 @@
 #include "minecraft.hpp"
 #include "zip.hpp"
 
+#include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
