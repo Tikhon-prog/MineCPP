@@ -469,7 +469,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
     if (metadata.contains("inheritsFrom"))
         throw std::runtime_error("Inherited or modded version metadata is not supported in MineCPP 0.1.0");
 
-    std::vector<fs::path> classpath{fs::absolute(jar_path)};
+    std::vector<fs::path> classpath_entries{fs::absolute(jar_path)};
     std::vector<std::string> missing;
     const fs::path natives_dir = profile / "natives";
     std::error_code ec;
@@ -487,7 +487,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
             if (relative.empty() && !classifiers_only) relative = maven_path(library.get_string("name"));
             if (!relative.empty()) {
                 const fs::path path = libraries_dir / fs::path(relative);
-                if (fs::exists(path)) classpath.push_back(fs::absolute(path));
+                if (fs::exists(path)) classpath_entries.push_back(fs::absolute(path));
                 else missing.push_back(path.string());
             }
             const Json* natives = library.get("natives");
@@ -524,7 +524,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
     if (!assets_id.empty() && !fs::exists(asset_index))
         throw std::runtime_error("Local asset index not found: " + asset_index.string());
 
-    const std::string classpath = join_classpath(classpath);
+    const std::string classpath_value = join_classpath(classpath_entries);
     const std::string natives_path = fs::absolute(natives_dir).string();
     std::map<std::string, std::string, std::less<>> vars{
         {"auth_player_name", username}, {"version_name", id},
@@ -533,7 +533,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         {"auth_uuid", offline_uuid(username)}, {"auth_access_token", "0"},
         {"user_type", "legacy"}, {"version_type", metadata.get_string("type", "release")},
         {"natives_directory", natives_path}, {"launcher_name", "MineCPP"}, {"launcher_version", "0.1.0"},
-        {"library_directory", fs::absolute(libraries_dir).string()}, {"classpath", classpath},
+        {"library_directory", fs::absolute(libraries_dir).string()}, {"classpath", classpath_value},
         {"classpath_separator", classpath_separator()}, {"user_properties", "{}"},
         {"resolution_width", "854"}, {"resolution_height", "480"}, {"clientid", ""}, {"auth_xuid", ""}
     };
@@ -544,7 +544,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
     else {
         arguments.emplace_back("-Djava.library.path=" + natives_path);
         arguments.emplace_back("-cp");
-        arguments.push_back(classpath);
+        arguments.push_back(classpath_value);
     }
     for (std::string& argument : arguments) argument = substitute(std::move(argument), vars);
     bool has_classpath = false;
