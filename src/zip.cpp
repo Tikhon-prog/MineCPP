@@ -41,9 +41,47 @@ std::string lower_ascii(std::string value) {
     return value;
 }
 
+void validate_utf8(std::string_view value) {
+    for (std::size_t index = 0; index < value.size();) {
+        const auto first = static_cast<unsigned char>(value[index]);
+        if (first < 0x80U) {
+            ++index;
+            continue;
+        }
+
+        std::size_t length = 0;
+        std::uint32_t codepoint = 0;
+        std::uint32_t minimum = 0;
+        if (first >= 0xC2U && first <= 0xDFU) {
+            length = 2; codepoint = first & 0x1FU; minimum = 0x80U;
+        } else if (first >= 0xE0U && first <= 0xEFU) {
+            length = 3; codepoint = first & 0x0FU; minimum = 0x800U;
+        } else if (first >= 0xF0U && first <= 0xF4U) {
+            length = 4; codepoint = first & 0x07U; minimum = 0x10000U;
+        } else {
+            throw std::runtime_error("JAR contains a filename that is not valid UTF-8");
+        }
+
+        if (index + length > value.size())
+            throw std::runtime_error("JAR contains a truncated UTF-8 filename");
+        for (std::size_t offset = 1; offset < length; ++offset) {
+            const auto next = static_cast<unsigned char>(value[index + offset]);
+            if ((next & 0xC0U) != 0x80U)
+                throw std::runtime_error("JAR contains an invalid UTF-8 filename");
+            codepoint = (codepoint << 6U) | (next & 0x3FU);
+        }
+        if (codepoint < minimum || codepoint > 0x10FFFFU ||
+            (codepoint >= 0xD800U && codepoint <= 0xDFFFU)) {
+            throw std::runtime_error("JAR contains an invalid UTF-8 filename");
+        }
+        index += length;
+    }
+}
+
 std::string safe_archive_name(std::string name, bool& is_directory) {
     if (name.empty() || name.find('\0') != std::string::npos)
         throw std::runtime_error("JAR contains an empty or invalid entry name");
+    validate_utf8(name);
     for (char& ch : name) {
         const auto byte = static_cast<unsigned char>(ch);
         if (byte < 0x20U || byte == 0x7fU)
@@ -151,6 +189,10 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
         e.external_attributes = u32(h, 38);
         e.local_header_offset = u32(h, 42);
         e.name = read_text(in, name_len);
+        if ((e.flags & 0x0800U) == 0 &&
+            std::any_of(e.name.begin(), e.name.end(), [](unsigned char ch) { return ch >= 0x80U; })) {
+            throw std::runtime_error("Non-ASCII ZIP entry names must use the UTF-8 flag");
+        }
         in.seekg(static_cast<std::streamoff>(extra_len + comment_len), std::ios::cur);
         if (!in || static_cast<std::uint64_t>(in.tellg()) > central_end)
             throw std::runtime_error("Invalid ZIP central-directory lengths");
