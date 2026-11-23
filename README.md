@@ -41,10 +41,11 @@ cmake --build build --parallel
 
 ### Windows
 
-Установите Visual Studio 2022 Build Tools с компонентом C++ и CMake, а также zlib. Затем из Developer PowerShell:
+Установите Visual Studio 2022 Build Tools с компонентом C++, CMake и vcpkg. Из Developer PowerShell:
 
 ```powershell
-cmake -S . -B build
+vcpkg install zlib:x64-windows
+cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows
 cmake --build build --config Release
 .\build\Release\minecpp.exe --help
 ```
