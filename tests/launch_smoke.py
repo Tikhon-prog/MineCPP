@@ -51,7 +51,8 @@ metadata = {
         "game": ["--username", "${auth_player_name}", "--version", "${version_name}",
                  "--gameDir", "${game_directory}", "--assetsDir", "${assets_root}",
                  "--assetIndex", "${assets_index_name}", "--uuid", "${auth_uuid}",
-                 "--accessToken", "${auth_access_token}", "--userType", "${user_type}"]
+                 "--accessToken", "${auth_access_token}", "--userType", "${user_type}",
+                 "--clientId", "${clientid}", "--xuid", "${auth_xuid}"]
     }
 }
 (version_dir / f"{version}.json").write_text(json.dumps(metadata), encoding="utf-8")
@@ -71,6 +72,7 @@ assert str(profile / "extracted") in run.stdout, run.stdout
 assert "--username Tikhon" in run.stdout, run.stdout
 assert "--version 1.20.4" in run.stdout, run.stdout
 assert "--accessToken 0" in run.stdout, run.stdout
+assert '--clientId ""' in run.stdout, run.stdout
 assert "example-lib-1.0.jar" in run.stdout, run.stdout
 assert (profile / "natives" / native_filename).read_bytes() == b"native-binary-placeholder"
 expected = uuid.UUID(bytes=hashlib.md5(b"OfflinePlayer:Tikhon").digest(), version=3)
