@@ -19,7 +19,7 @@ MineCPP import
 MineCPP launch (offline)
   ├── reads version metadata
   ├── resolves already-present libraries and native classifiers
-  ├── builds the Java classpath and game arguments
+  ├── builds a classpath with the extracted client tree first, original JAR as fallback, and local libraries
   ├── supplies a deterministic OfflinePlayer identity
   └── starts the local Java runtime; no network code is involved
 ```
