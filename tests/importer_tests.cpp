@@ -165,6 +165,9 @@ int main() {
         CHECK(!valid_version_id("../escape"));
         CHECK(!valid_version_id("C:\\bad"));
         CHECK(!valid_version_id(""));
+        CHECK(!valid_version_id("CON"));
+        CHECK(!valid_version_id("com1"));
+        CHECK(!valid_version_id("LPT9.log"));
 
         const fs::path source_directory = temporary / "minecraft" / "versions" / "1.20.4";
         fs::create_directories(source_directory);
