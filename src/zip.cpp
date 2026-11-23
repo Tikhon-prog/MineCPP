@@ -119,6 +119,7 @@ ZipArchive::ZipArchive(std::filesystem::path file) : file_(std::move(file)) {
     const auto count = u16(tail, eocd + 10);
     const auto directory_size = u32(tail, eocd + 12);
     const auto directory_offset = u32(tail, eocd + 16);
+    central_directory_offset_ = directory_offset;
     if (count == 0xFFFFU || directory_size == 0xFFFFFFFFU || directory_offset == 0xFFFFFFFFU)
         throw std::runtime_error("ZIP64 archives are not supported in this build");
     const std::uint64_t eocd_absolute = file_size - tail_size + eocd;
@@ -186,10 +187,12 @@ std::size_t ZipArchive::count_files() const {
 }
 
 std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) const {
-    const auto destination_absolute = std::filesystem::absolute(destination);
-    std::filesystem::create_directories(destination_absolute);
-    const auto destination_root = std::filesystem::weakly_canonical(destination_absolute);
-    const auto is_within_root = [](const std::filesystem::path& root, const std::filesystem::path& candidate) {
+    namespace fs = std::filesystem;
+    const fs::path destination_absolute = fs::absolute(destination);
+    fs::create_directories(destination_absolute);
+    const fs::path destination_root = fs::weakly_canonical(destination_absolute);
+
+    const auto is_within_root = [](const fs::path& root, const fs::path& candidate) {
         auto root_it = root.begin();
         auto candidate_it = candidate.begin();
         for (; root_it != root.end() && candidate_it != candidate.end(); ++root_it, ++candidate_it) {
@@ -197,70 +200,148 @@ std::size_t ZipArchive::extract_all(const std::filesystem::path& destination) co
         }
         return root_it == root.end();
     };
+
+    const auto reject_symlink_components = [](const fs::path& root, const fs::path& relative) {
+        fs::path current = root;
+        for (const fs::path& component : relative) {
+            current /= component;
+            std::error_code error;
+            const fs::file_status status = fs::symlink_status(current, error);
+            if (!error && fs::is_symlink(status))
+                throw std::runtime_error("Refusing to follow a pre-existing symlink during JAR extraction: " +
+                                         current.string());
+            if (error && error != std::errc::no_such_file_or_directory)
+                throw std::runtime_error("Cannot inspect extraction path: " + error.message());
+        }
+    };
+
     std::ifstream in(file_, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot reopen JAR: " + file_.string());
+
     std::size_t extracted = 0;
     std::uint64_t total_uncompressed = 0;
     for (const Entry& entry : entries_) {
-        const auto relative = safe_relative_path(entry.name);
-        if (relative.empty()) continue;
-        const auto output = destination_absolute / relative;
+        const fs::path relative = path_from_utf8(entry.name);
+        if (relative.empty() || relative.is_absolute())
+            throw std::runtime_error("Invalid normalized path in JAR: " + entry.name);
+
+        const fs::path output = destination_absolute / relative;
+        reject_symlink_components(destination_absolute, relative);
+
         if (entry.directory) {
-            std::filesystem::create_directories(output);
-            const auto resolved_directory = std::filesystem::weakly_canonical(output);
+            const fs::path resolved_directory = fs::weakly_canonical(output);
             if (!is_within_root(destination_root, resolved_directory))
-                throw std::runtime_error("JAR extraction path escapes destination through a symlink: " + entry.name);
+                throw std::runtime_error("JAR extraction path escapes destination: " + entry.name);
+            fs::create_directories(output);
+            const fs::path resolved_after_creation = fs::weakly_canonical(output);
+            if (!is_within_root(destination_root, resolved_after_creation))
+                throw std::runtime_error("JAR extraction path escaped destination: " + entry.name);
             continue;
         }
-        total_uncompressed += entry.uncompressed_size;
-        if (total_uncompressed > 4ULL * 1024ULL * 1024ULL * 1024ULL)
-            throw std::runtime_error("JAR extraction exceeds 4 GiB safety limit");
 
-        std::vector<unsigned char> local(30);
+        if (entry.uncompressed_size > kMaxTotalUncompressed - total_uncompressed)
+            throw std::runtime_error("JAR extraction exceeds the 2 GiB total safety limit");
+        total_uncompressed += entry.uncompressed_size;
+
+        if (static_cast<std::uint64_t>(entry.local_header_offset) >= central_directory_offset_)
+            throw std::runtime_error("JAR local header points into the central directory: " + entry.name);
+
+        std::array<unsigned char, 30> local{};
+        in.clear();
         in.seekg(static_cast<std::streamoff>(entry.local_header_offset));
         in.read(reinterpret_cast<char*>(local.data()), static_cast<std::streamsize>(local.size()));
-        if (!in || u32(local, 0) != kLocal) throw std::runtime_error("Invalid local ZIP header for " + entry.name);
-        if (u16(local, 8) != entry.method) throw std::runtime_error("ZIP compression method mismatch for " + entry.name);
-        const auto name_len = u16(local, 26);
-        const auto extra_len = u16(local, 28);
-        const auto data_offset = static_cast<std::uint64_t>(entry.local_header_offset) + 30ULL + name_len + extra_len;
-        in.seekg(static_cast<std::streamoff>(data_offset));
+        if (!in || u32(std::vector<unsigned char>(local.begin(), local.end()), 0) != kLocal)
+            throw std::runtime_error("Invalid local ZIP header for " + entry.name);
+        if (u16(std::vector<unsigned char>(local.begin(), local.end()), 6) != entry.flags)
+            throw std::runtime_error("ZIP general-purpose flags mismatch for " + entry.name);
+        if (u16(std::vector<unsigned char>(local.begin(), local.end()), 8) != entry.method)
+            throw std::runtime_error("ZIP compression method mismatch for " + entry.name);
+
+        const std::uint16_t local_name_length =
+            static_cast<std::uint16_t>(local[26]) |
+            static_cast<std::uint16_t>(static_cast<std::uint16_t>(local[27]) << 8U);
+        const std::uint16_t local_extra_length =
+            static_cast<std::uint16_t>(local[28]) |
+            static_cast<std::uint16_t>(static_cast<std::uint16_t>(local[29]) << 8U);
+        const std::uint64_t data_offset = static_cast<std::uint64_t>(entry.local_header_offset) +
+            local.size() + local_name_length + local_extra_length;
+        if (data_offset > central_directory_offset_ ||
+            static_cast<std::uint64_t>(entry.compressed_size) > central_directory_offset_ - data_offset) {
+            throw std::runtime_error("JAR entry data overlaps the central directory: " + entry.name);
+        }
+
+        const std::string local_name = read_text(in, local_name_length);
+        bool local_is_directory = false;
+        const std::string normalized_local_name =
+            safe_archive_name(local_name, local_is_directory);
+        if (normalized_local_name != entry.name || local_is_directory != entry.directory)
+            throw std::runtime_error("ZIP local and central filenames do not match: " + entry.name);
+
+        in.seekg(static_cast<std::streamoff>(local_extra_length), std::ios::cur);
+        if (!in || static_cast<std::uint64_t>(in.tellg()) != data_offset)
+            throw std::runtime_error("Invalid local ZIP header lengths for " + entry.name);
+
         std::vector<unsigned char> compressed(entry.compressed_size);
-        if (!compressed.empty()) in.read(reinterpret_cast<char*>(compressed.data()), static_cast<std::streamsize>(compressed.size()));
+        if (!compressed.empty()) {
+            in.read(reinterpret_cast<char*>(compressed.data()),
+                    static_cast<std::streamsize>(compressed.size()));
+        }
         if (!in) throw std::runtime_error("Truncated compressed data for " + entry.name);
 
-        std::vector<unsigned char> data(entry.uncompressed_size);
+        std::vector<unsigned char> data;
         if (entry.method == 0) {
-            if (entry.compressed_size != entry.uncompressed_size) throw std::runtime_error("Invalid stored ZIP entry size: " + entry.name);
+            if (entry.compressed_size != entry.uncompressed_size)
+                throw std::runtime_error("Invalid stored ZIP entry size: " + entry.name);
             data = std::move(compressed);
         } else {
+            data.resize(entry.uncompressed_size);
             z_stream stream{};
             unsigned char empty_output = 0;
             stream.next_in = compressed.empty() ? Z_NULL : compressed.data();
             stream.avail_in = static_cast<uInt>(compressed.size());
             stream.next_out = data.empty() ? &empty_output : data.data();
             stream.avail_out = data.empty() ? 1U : static_cast<uInt>(data.size());
-            if (inflateInit2(&stream, -MAX_WBITS) != Z_OK) throw std::runtime_error("Cannot initialize ZIP decompressor");
+            if (inflateInit2(&stream, -MAX_WBITS) != Z_OK)
+                throw std::runtime_error("Cannot initialize ZIP decompressor");
             const int result = inflate(&stream, Z_FINISH);
             const auto total_out = stream.total_out;
             const auto total_in = stream.total_in;
             inflateEnd(&stream);
-            if (result != Z_STREAM_END || total_out != entry.uncompressed_size || total_in != entry.compressed_size)
+            if (result != Z_STREAM_END || total_out != entry.uncompressed_size ||
+                total_in != entry.compressed_size) {
                 throw std::runtime_error("Cannot decompress JAR entry: " + entry.name);
+            }
         }
-        const auto actual_crc = crc32(0L, data.empty() ? Z_NULL : data.data(), static_cast<uInt>(data.size()));
-        if (actual_crc != entry.crc) throw std::runtime_error("CRC check failed for JAR entry: " + entry.name);
-        std::filesystem::create_directories(output.parent_path());
-        const auto resolved_parent = std::filesystem::weakly_canonical(output.parent_path());
+
+        const auto actual_crc = crc32(
+            0L, data.empty() ? Z_NULL : data.data(), static_cast<uInt>(data.size()));
+        if (actual_crc != entry.crc)
+            throw std::runtime_error("CRC check failed for JAR entry: " + entry.name);
+
+        const fs::path resolved_parent = fs::weakly_canonical(output.parent_path());
         if (!is_within_root(destination_root, resolved_parent))
-            throw std::runtime_error("JAR extraction path escapes destination through a symlink: " + entry.name);
+            throw std::runtime_error("JAR extraction path escapes destination: " + entry.name);
+        fs::create_directories(output.parent_path());
+        reject_symlink_components(destination_absolute, relative);
+        const fs::path resolved_parent_after_creation = fs::weakly_canonical(output.parent_path());
+        if (!is_within_root(destination_root, resolved_parent_after_creation))
+            throw std::runtime_error("JAR extraction path escaped destination: " + entry.name);
+
         std::error_code status_error;
-        const auto output_status = std::filesystem::symlink_status(output, status_error);
-        if (!status_error && std::filesystem::is_symlink(output_status))
+        const fs::file_status output_status = fs::symlink_status(output, status_error);
+        if (!status_error && fs::is_symlink(output_status))
             throw std::runtime_error("Refusing to overwrite a symlink during JAR extraction: " + output.string());
+        if (!status_error && fs::exists(output_status) && !fs::is_regular_file(output_status))
+            throw std::runtime_error("Refusing to overwrite a non-regular file during JAR extraction: " +
+                                     output.string());
+        if (status_error && status_error != std::errc::no_such_file_or_directory)
+            throw std::runtime_error("Cannot inspect extraction target: " + status_error.message());
+
         std::ofstream out(output, std::ios::binary | std::ios::trunc);
         if (!out) throw std::runtime_error("Cannot create extracted file: " + output.string());
-        if (!data.empty()) out.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+        if (!data.empty())
+            out.write(reinterpret_cast<const char*>(data.data()),
+                      static_cast<std::streamsize>(data.size()));
         if (!out) throw std::runtime_error("Failed writing extracted file: " + output.string());
         ++extracted;
     }
