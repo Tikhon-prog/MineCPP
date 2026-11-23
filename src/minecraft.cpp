@@ -37,6 +37,15 @@ namespace minecpp {
 namespace fs = std::filesystem;
 namespace {
 
+std::string path_to_utf8(const fs::path& path) {
+    const auto encoded = path.u8string();
+    return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
+
+fs::path path_from_utf8(const std::string& value) {
+    return fs::u8path(value);
+}
+
 std::string read_file(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file: " + path.string());
@@ -177,7 +186,7 @@ std::string join_classpath(const std::vector<fs::path>& paths) {
     std::string result;
     for (const auto& path : paths) {
         if (!result.empty()) result += classpath_separator();
-        result += path.string();
+        result += path_to_utf8(path);
     }
     return result;
 }
@@ -420,7 +429,7 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
     try {
         fs::copy_file(jar_path, staging / "client.jar", fs::copy_options::overwrite_existing);
         fs::copy_file(json_path, staging / "version.json", fs::copy_options::overwrite_existing);
-        write_file(staging / "source-game-dir.txt", fs::absolute(minecraft_dir).string());
+        write_file(staging / "source-game-dir.txt", path_to_utf8(fs::absolute(minecraft_dir)));
         std::cout << "Extracting " << archive.count_files() << " JAR entries...\n";
         const std::size_t extracted = archive.extract_all(staging / "extracted");
         fs::remove_all(backup, ec);
@@ -459,7 +468,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         throw std::runtime_error("Profile not imported. Run: minecpp import " + id);
     const Json metadata = Json::parse(read_file(json_path));
     const fs::path minecraft_dir = minecraft_dir_arg.empty()
-        ? fs::path(read_file(profile / "source-game-dir.txt")) : minecraft_dir_arg;
+        ? path_from_utf8(read_file(profile / "source-game-dir.txt")) : minecraft_dir_arg;
     const fs::path libraries_dir = minecraft_dir / "libraries";
     const fs::path assets_dir = minecraft_dir / "assets";
     if (!fs::exists(libraries_dir)) throw std::runtime_error("Minecraft libraries folder not found: " + libraries_dir.string());
@@ -529,16 +538,16 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         throw std::runtime_error("Local asset index not found: " + asset_index.string());
 
     const std::string classpath_value = join_classpath(classpath_entries);
-    const std::string natives_path = fs::absolute(natives_dir).string();
+    const std::string natives_path = path_to_utf8(fs::absolute(natives_dir));
     std::map<std::string, std::string, std::less<>> vars{
         {"auth_player_name", username}, {"version_name", id},
-        {"game_directory", fs::absolute(minecraft_dir).string()},
-        {"assets_root", fs::absolute(assets_dir).string()}, {"assets_index_name", assets_id},
+        {"game_directory", path_to_utf8(fs::absolute(minecraft_dir))},
+        {"assets_root", path_to_utf8(fs::absolute(assets_dir))}, {"assets_index_name", assets_id},
         {"auth_uuid", offline_uuid(username)}, {"auth_access_token", "0"},
         {"auth_session", "token:0:" + offline_uuid(username)}, {"game_assets", assets_id},
         {"user_type", "legacy"}, {"version_type", metadata.get_string("type", "release")},
         {"natives_directory", natives_path}, {"launcher_name", "MineCPP"}, {"launcher_version", "0.1.0"},
-        {"library_directory", fs::absolute(libraries_dir).string()}, {"classpath", classpath_value},
+        {"library_directory", path_to_utf8(fs::absolute(libraries_dir))}, {"classpath", classpath_value},
         {"classpath_separator", classpath_separator()}, {"user_properties", "{}"},
         {"resolution_width", "854"}, {"resolution_height", "480"}, {"clientid", ""}, {"auth_xuid", ""}
     };
@@ -566,7 +575,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
             const Json* file = client->get("file");
             if (!flag.empty() && file) {
                 auto log_vars = vars;
-                log_vars["path"] = (assets_dir / "log_configs" / file->get_string("id")).string();
+                log_vars["path"] = path_to_utf8(assets_dir / "log_configs" / file->get_string("id"));
                 arguments.push_back(substitute(flag, log_vars));
             }
         }
@@ -591,7 +600,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         std::cout << '\n';
         return 0;
     }
-    const int result = run_process(find_java(), arguments, fs::absolute(minecraft_dir).string());
+    const int result = run_process(find_java(), arguments, path_to_utf8(fs::absolute(minecraft_dir)));
     if (result != 0) std::cerr << "Minecraft exited with code " << result << '\n';
     return result;
 }
