@@ -11,7 +11,7 @@ The repository also contains an experimental native voxel sandbox (the minecpp e
 The first release provides a command-line launcher/importer:
 
 - Import an existing client.jar without internet access.
-- Detect the version ID from the JAR filename, or specify it explicitly.
+- Detect the version ID from the JAR filename or its containing version folder, or specify it explicitly.
 - Extract stored and DEFLATE-compressed ZIP entries.
 - Reject absolute paths, parent-directory traversal, duplicate/case-colliding paths, symbolic links and special Unix file types, encrypted entries, unsupported compression, and unsafe archive sizes.
 - Verify each extracted file against its CRC-32 and recorded size; refuse symlinks and unsafe manifest paths.
@@ -159,7 +159,8 @@ It is a development prototype, not a claim of Minecraft compatibility. Textures,
 CMake builds two test executables:
 
 - minecpp_tests: deterministic world generation, negative chunk coordinates, block edits, saves, and mesh generation.
-- minecpp_import_tests: JAR import, DEFLATE extraction, metadata copy, duplicate-import protection, CRC verification, tamper detection, and path-traversal rejection.
+- minecpp_import_tests: stored and DEFLATE JAR entries, metadata copy, automatic version detection, source-folder protection, duplicate-import protection, CRC verification, hostile-manifest rejection, duplicate/case-colliding paths, Unix symlink rejection, Windows reserved names, and path-traversal rejection.
+- CLI smoke tests: help, version, empty version listing, and missing-version verification.
 
 GitHub Actions builds and runs tests on Linux, Windows, and macOS.
 
