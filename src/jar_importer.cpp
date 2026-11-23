@@ -26,7 +26,7 @@ constexpr std::uint32_t kEocdSignature = 0x06054b50U;
 constexpr std::uint32_t kCentralSignature = 0x02014b50U;
 constexpr std::uint32_t kLocalSignature = 0x04034b50U;
 constexpr std::uint64_t kMaxArchiveBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
-constexpr std::uint64_t kMaxEntryBytes = 512ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaxEntryBytes = 128ULL * 1024ULL * 1024ULL;
 constexpr std::uint64_t kMaxExpandedBytes = 2ULL * 1024ULL * 1024ULL * 1024ULL;
 constexpr std::uint32_t kMaxEntries = 100000U;
 constexpr std::string_view kManifestName = "manifest.mcpp";
@@ -505,8 +505,15 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
 
         const unsigned int host_os = made_by >> 8U;
         const std::uint32_t unix_mode = external_attributes >> 16U;
-        if (host_os == 3U && (unix_mode & 0170000U) == 0120000U)
-            throw std::runtime_error("JAR contains a symbolic link, which is not extracted");
+        if (host_os == 3U) {
+            const std::uint32_t unix_type = unix_mode & 0170000U;
+            if (unix_type == 0120000U)
+                throw std::runtime_error("JAR contains a symbolic link, which is not extracted");
+            if (unix_type != 0U && unix_type != 0100000U && unix_type != 0040000U)
+                throw std::runtime_error("JAR contains a special Unix file type, which is not extracted");
+            if ((unix_type == 0040000U) != is_directory && unix_type != 0U)
+                throw std::runtime_error("JAR entry type does not match its directory name: " + relative_name);
+        }
 
         cursor += header.size() + variable_size;
         const fs::path destination = output_directory / path_from_utf8(relative_name);
@@ -516,14 +523,18 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
         }
 
         if (uncompressed_size > kMaxEntryBytes || compressed_size > kMaxEntryBytes)
-            throw std::runtime_error("JAR entry exceeds the 512 MiB safety limit: " + relative_name);
+            throw std::runtime_error("JAR entry exceeds the 128 MiB safety limit: " + relative_name);
         if (expanded_total > kMaxExpandedBytes - uncompressed_size)
             throw std::runtime_error("JAR expands beyond the 2 GiB safety limit");
 
         std::array<std::uint8_t, 30> local{};
         read_at(input, local_offset, reinterpret_cast<char*>(local.data()), local.size());
+        if (static_cast<std::uint64_t>(local_offset) >= central_offset)
+            throw std::runtime_error("JAR local header points into the central directory");
         if (u32(local.data()) != kLocalSignature)
             throw std::runtime_error("Invalid local ZIP header for: " + relative_name);
+        if (u16(local.data() + 6U) != flags)
+            throw std::runtime_error("ZIP general-purpose flags mismatch for: " + relative_name);
         if (u16(local.data() + 8U) != method)
             throw std::runtime_error("ZIP compression method mismatch for: " + relative_name);
         const std::uint16_t local_name_length = u16(local.data() + 26U);
@@ -538,7 +549,8 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
 
         const std::uint64_t data_offset = static_cast<std::uint64_t>(local_offset) +
             local.size() + local_name_length + local_extra_length;
-        if (data_offset + compressed_size > central_offset)
+        if (data_offset > central_offset ||
+            static_cast<std::uint64_t>(compressed_size) > central_offset - data_offset)
             throw std::runtime_error("JAR entry data overlaps the central directory");
         std::vector<std::uint8_t> compressed(compressed_size);
         if (!compressed.empty())
