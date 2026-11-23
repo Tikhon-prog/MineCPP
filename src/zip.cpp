@@ -4,6 +4,7 @@
 #include <array>
 #include <fstream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <zlib.h>
@@ -13,7 +14,9 @@ namespace {
 constexpr std::uint32_t kEocd = 0x06054B50U;
 constexpr std::uint32_t kCentral = 0x02014B50U;
 constexpr std::uint32_t kLocal = 0x04034B50U;
-constexpr std::uint64_t kMaxEntrySize = 1024ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaxArchiveSize = 2ULL * 1024ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaxEntrySize = 128ULL * 1024ULL * 1024ULL;
+constexpr std::uint64_t kMaxTotalUncompressed = 2ULL * 1024ULL * 1024ULL * 1024ULL;
 
 std::uint16_t u16(const std::vector<unsigned char>& b, std::size_t p) {
     if (p + 2 > b.size()) throw std::runtime_error("Unexpected end of ZIP file");
@@ -30,21 +33,65 @@ std::string read_text(std::ifstream& in, std::size_t n) {
     if (in.gcount() != static_cast<std::streamsize>(n)) throw std::runtime_error("Truncated ZIP entry name");
     return value;
 }
-std::filesystem::path safe_relative_path(std::string name) {
-    std::replace(name.begin(), name.end(), '\\', '/');
-    if (name.empty() || name.find('\0') != std::string::npos || name.find(':') != std::string::npos || name.front() == '/')
-        throw std::runtime_error("Unsafe absolute or invalid path in JAR: " + name);
-    std::filesystem::path relative;
-    std::size_t start = 0;
-    while (start <= name.size()) {
-        const auto end = name.find('/', start);
-        const std::string part = name.substr(start, end == std::string::npos ? std::string::npos : end - start);
-        if (part == "..") throw std::runtime_error("Unsafe parent path in JAR: " + name);
-        if (!part.empty() && part != ".") relative /= std::filesystem::path(part);
-        if (end == std::string::npos) break;
-        start = end + 1;
+std::string lower_ascii(std::string value) {
+    for (char& ch : value) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte >= 'A' && byte <= 'Z') ch = static_cast<char>(byte - 'A' + 'a');
     }
-    return relative;
+    return value;
+}
+
+std::string safe_archive_name(std::string name, bool& is_directory) {
+    if (name.empty() || name.find('\0') != std::string::npos)
+        throw std::runtime_error("JAR contains an empty or invalid entry name");
+    for (char& ch : name) {
+        const auto byte = static_cast<unsigned char>(ch);
+        if (byte < 0x20U || byte == 0x7fU)
+            throw std::runtime_error("JAR contains a filename with a control character");
+        if (ch == '\\') ch = '/';
+    }
+
+    is_directory = name.back() == '/';
+    if (name.front() == '/' || name.rfind("//", 0) == 0)
+        throw std::runtime_error("JAR contains an absolute path: " + name);
+    if (is_directory) name.pop_back();
+    if (name.empty()) throw std::runtime_error("JAR contains an invalid root directory entry");
+
+    std::size_t begin = 0;
+    while (begin <= name.size()) {
+        const std::size_t end = name.find('/', begin);
+        const std::string part = name.substr(begin,
+            (end == std::string::npos ? name.size() : end) - begin);
+        if (part.empty() || part == "." || part == ".." ||
+            part.find(':') != std::string::npos) {
+            throw std::runtime_error("JAR contains an unsafe path: " + name);
+        }
+        if (part.back() == '.' || part.back() == ' ' ||
+            part.find_first_of("<>\"|?*") != std::string::npos) {
+            throw std::runtime_error("JAR contains a filename that is not portable to Windows: " + name);
+        }
+
+        const std::string device = lower_ascii(part.substr(0, part.find('.')));
+        const bool numbered_device = device.size() == 4U &&
+            (device.rfind("com", 0) == 0 || device.rfind("lpt", 0) == 0) &&
+            device[3] >= '1' && device[3] <= '9';
+        if (device == "con" || device == "prn" || device == "aux" ||
+            device == "nul" || device == "conin$" || device == "conout$" || numbered_device) {
+            throw std::runtime_error("JAR contains a reserved Windows device filename: " + name);
+        }
+
+        if (end == std::string::npos) break;
+        begin = end + 1;
+    }
+    return name;
+}
+
+std::filesystem::path path_from_utf8(std::string_view value) {
+    std::u8string encoded;
+    encoded.reserve(value.size());
+    for (const unsigned char byte : value)
+        encoded.push_back(static_cast<char8_t>(byte));
+    return std::filesystem::path(encoded);
 }
 }
 
