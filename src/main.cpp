@@ -1,4 +1,5 @@
 #include "minecraft.hpp"
+#include "process.hpp"
 #include "zip.hpp"
 
 #include <cstdlib>
@@ -81,15 +82,12 @@ void doctor(const Options& options) {
     std::cout << (fs::exists(game / "libraries") ? "[OK] " : "[!!] ") << "Libraries: " << game / "libraries" << '\n';
     std::cout << (fs::exists(game / "assets") ? "[OK] " : "[!!] ") << "Assets: " << game / "assets" << '\n';
     std::cout << "[INFO] MineCPP data: " << data << '\n';
-    const char* java_home = std::getenv("JAVA_HOME");
-    std::cout << "[INFO] JAVA_HOME: " << (java_home ? java_home : "not set (java will be searched in PATH)") << '\n';
-#ifndef _WIN32
-    const int result = std::system("java -version >/dev/null 2>&1");
-#else
-    const int result = std::system("java -version >NUL 2>&1");
-#endif
-    std::cout << (result == 0 ? "[OK] " : "[!!] ") << "Java runtime on PATH\n";
-    if (!fs::exists(game / "versions") || !fs::exists(game / "libraries") || !fs::exists(game / "assets") || result != 0)
+    std::cout << "[INFO] Java executable: " << minecpp::find_java() << '\n';
+    int java_result = 1;
+    try { java_result = minecpp::run_process(minecpp::find_java(), {"-version"}, ""); }
+    catch (const std::exception&) { java_result = 1; }
+    std::cout << (java_result == 0 ? "[OK] " : "[!!] ") << "Java runtime\n";
+    if (!fs::exists(game / "versions") || !fs::exists(game / "libraries") || !fs::exists(game / "assets") || java_result != 0)
         std::cout << "\nSome requirements are missing. MineCPP works offline and will not download them.\n";
     else std::cout << "\nThe basic local installation layout is present.\n";
 }
