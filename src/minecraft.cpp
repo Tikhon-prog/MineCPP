@@ -544,7 +544,7 @@ int launch_version(const std::string& id, const std::string& username, const fs:
         {"game_directory", path_to_utf8(fs::absolute(minecraft_dir))},
         {"assets_root", path_to_utf8(fs::absolute(assets_dir))}, {"assets_index_name", assets_id},
         {"auth_uuid", offline_uuid(username)}, {"auth_access_token", "0"},
-        {"auth_session", "token:0:" + offline_uuid(username)}, {"game_assets", assets_id},
+        {"auth_session", "token:0:" + offline_uuid(username)}, {"game_assets", path_to_utf8(assets_dir / "virtual" / "legacy")},
         {"user_type", "legacy"}, {"version_type", metadata.get_string("type", "release")},
         {"natives_directory", natives_path}, {"launcher_name", "MineCPP"}, {"launcher_version", "0.1.0"},
         {"library_directory", path_to_utf8(fs::absolute(libraries_dir))}, {"classpath", classpath_value},
