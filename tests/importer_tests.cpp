@@ -185,6 +185,26 @@ int main() {
         CHECK(good.ok);
         CHECK(good.checked_files == 4U);
 
+        // Importing into the source .minecraft directory must never replace the original JAR.
+        expect_throw([&] {
+            (void)import_jar(jar, temporary / "minecraft", "1.20.4", true);
+        });
+        CHECK(fs::is_regular_file(jar));
+
+        // A hand-edited manifest must not be able to introduce traversal paths or signed sizes.
+        const auto expect_bad_manifest = [&](const std::string& suffix, const std::string& line) {
+            const fs::path bad_data = temporary / ("bad-manifest-" + suffix);
+            const fs::path bad_version = bad_data / "versions" / "1.20.4";
+            fs::create_directories(bad_version.parent_path());
+            fs::copy(imported.version_directory, bad_version, fs::copy_options::recursive);
+            std::ofstream manifest(bad_version / "manifest.mcpp", std::ios::binary | std::ios::app);
+            manifest << line << '\\n';
+            manifest.close();
+            CHECK(!verify_import("1.20.4", bad_data).ok);
+        };
+        expect_bad_manifest("traversal", "ENTRY\\t0\\t00000000\\tclient/%2E%2E/escaped.txt");
+        expect_bad_manifest("negative-size", "ENTRY\\t-1\\t00000000\\tclient/extra.bin");
+
         const auto versions = list_imports(data_directory);
         CHECK(versions.size() == 1U);
         CHECK(versions.front().version_id == "1.20.4");
