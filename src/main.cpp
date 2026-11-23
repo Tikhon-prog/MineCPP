@@ -8,8 +8,28 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
+
+fs::path path_from_utf8(const std::string& value) {
+    return fs::u8path(value);
+}
+
+std::string path_to_utf8(const fs::path& value) {
+    const auto encoded = value.u8string();
+    return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
+}
 
 namespace {
 void print_help() {
@@ -61,8 +81,8 @@ Options parse_options(int argc, char** argv, int start) {
             if (i + 1 >= argc) throw std::runtime_error("Missing value after " + arg);
             return argv[++i];
         };
-        if (arg == "--minecraft-dir") options.minecraft_dir = value();
-        else if (arg == "--data-dir") options.data_dir = value();
+        if (arg == "--minecraft-dir") options.minecraft_dir = path_from_utf8(value());
+        else if (arg == "--data-dir") options.data_dir = path_from_utf8(value());
         else if (arg == "--output") options.output = value();
         else if (arg == "--jar") options.jar = value();
         else if (arg == "--metadata") options.metadata = value();
@@ -93,7 +113,7 @@ void doctor(const Options& options) {
 }
 }
 
-int main(int argc, char** argv) {
+int launcher_main(int argc, char** argv) {
     try {
         if (argc == 1) { print_help(); return 0; }
         const std::string command = argv[1];
@@ -102,13 +122,13 @@ int main(int argc, char** argv) {
 
         if (command == "inspect") {
             if (argc < 3) throw std::runtime_error("Usage: minecpp inspect <client.jar>");
-            minecpp::inspect_jar(argv[2]); return 0;
+            minecpp::inspect_jar(path_from_utf8(argv[2])); return 0;
         }
         if (command == "extract") {
             if (argc < 3) throw std::runtime_error("Usage: minecpp extract <archive.jar> --output DIR");
             const Options opts = parse_options(argc, argv, 3);
             if (opts.output.empty()) throw std::runtime_error("extract requires --output DIR");
-            minecpp::ZipArchive archive(argv[2]);
+            minecpp::ZipArchive archive(path_from_utf8(argv[2]));
             const auto count = archive.extract_all(opts.output);
             std::cout << "Extracted " << count << " files to " << opts.output << '\n';
             return 0;
@@ -136,3 +156,35 @@ int main(int argc, char** argv) {
         return 1;
     }
 }
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** wide_argv) {
+    std::vector<std::string> utf8_arguments;
+    utf8_arguments.reserve(static_cast<std::size_t>(argc));
+    for (int index = 0; index < argc; ++index) {
+        const int required = WideCharToMultiByte(
+            CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[index], -1, nullptr, 0, nullptr, nullptr);
+        if (required <= 0) {
+            std::cerr << "MineCPP: cannot convert a Windows command-line argument to UTF-8\n";
+            return 1;
+        }
+        std::string converted(static_cast<std::size_t>(required), '\0');
+        if (WideCharToMultiByte(
+                CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[index], -1,
+                converted.data(), required, nullptr, nullptr) <= 0) {
+            std::cerr << "MineCPP: cannot convert a Windows command-line argument to UTF-8\n";
+            return 1;
+        }
+        converted.pop_back();
+        utf8_arguments.push_back(std::move(converted));
+    }
+    std::vector<char*> argv_utf8;
+    argv_utf8.reserve(utf8_arguments.size());
+    for (std::string& argument : utf8_arguments) argv_utf8.push_back(argument.data());
+    return launcher_main(argc, argv_utf8.data());
+}
+#else
+int main(int argc, char** argv) {
+    return launcher_main(argc, argv);
+}
+#endif
