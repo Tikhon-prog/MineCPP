@@ -67,6 +67,7 @@ assert (profile / "extracted" / "net/minecraft/client/main/Main.class").read_byt
 run = subprocess.run([str(exe), "launch", version, "--username", "Tikhon", "--minecraft-dir", str(minecraft),
                       "--data-dir", str(data), "--dry-run"], check=True, capture_output=True, text=True)
 assert "net.minecraft.client.main.Main" in run.stdout, run.stdout
+assert str(profile / "extracted") in run.stdout, run.stdout
 assert "--username Tikhon" in run.stdout, run.stdout
 assert "--version 1.20.4" in run.stdout, run.stdout
 assert "--accessToken 0" in run.stdout, run.stdout
