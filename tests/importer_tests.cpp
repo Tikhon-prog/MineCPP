@@ -155,6 +155,9 @@ int main() {
     try {
         CHECK(valid_version_id("1.20.4"));
         CHECK(valid_version_id("26.3"));
+        CHECK(!valid_version_id("CON"));
+        CHECK(!valid_version_id("com1"));
+        CHECK(!valid_version_id("lpt9"));
         CHECK(!valid_version_id("../escape"));
         CHECK(!valid_version_id("C:\\bad"));
         CHECK(!valid_version_id(""));
@@ -190,6 +193,14 @@ int main() {
             (void)import_jar(jar, temporary / "minecraft", "1.20.4", true);
         });
         CHECK(fs::is_regular_file(jar));
+
+        // A generic client.jar should use its Minecraft versions directory as the version ID.
+        const fs::path generic_jar = source_directory / "client.jar";
+        fs::copy_file(jar, generic_jar);
+        const ImportSummary auto_detected =
+            import_jar(generic_jar, temporary / "auto-detect-data");
+        CHECK(auto_detected.version_id == "1.20.4");
+        CHECK(auto_detected.copied_version_metadata);
 
         // A hand-edited manifest must not be able to introduce traversal paths or signed sizes.
         const auto expect_bad_manifest = [&](const std::string& suffix, const std::string& line) {
