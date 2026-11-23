@@ -13,8 +13,8 @@ The first release provides a command-line launcher/importer:
 - Import an existing client.jar without internet access.
 - Detect the version ID from the JAR filename, or specify it explicitly.
 - Extract stored and DEFLATE-compressed ZIP entries.
-- Reject absolute paths, parent-directory traversal, duplicate/case-colliding paths, symbolic links, encrypted entries, unsupported compression, and unsafe archive sizes.
-- Verify each extracted file against its CRC-32 and recorded size.
+- Reject absolute paths, parent-directory traversal, duplicate/case-colliding paths, symbolic links and special Unix file types, encrypted entries, unsupported compression, and unsafe archive sizes.
+- Verify each extracted file against its CRC-32 and recorded size; refuse symlinks and unsafe manifest paths.
 - Copy the matching version JSON when it sits next to the JAR.
 - Keep the original JAR unchanged.
 - List imported versions and verify an import again later.
@@ -38,7 +38,7 @@ Import the JAR:
 ./build/minecpp-launcher import ~/.minecraft/versions/1.20.4/1.20.4.jar
 ~~~
 
-The version ID defaults to the JAR filename (1.20.4). MineCPP extracts the JAR under:
+The version ID defaults to the JAR filename (for example, `1.20.4.jar`). For a generic `client.jar` or `minecraft.jar`, MineCPP uses the containing version folder name when it is valid. You can always override it with `--id`. MineCPP extracts the JAR under:
 
 ~~~text
 minecpp-data/
@@ -71,7 +71,9 @@ Other commands:
 ./build/minecpp-launcher --help
 ~~~
 
---force builds a complete staging directory first and then replaces the previous import. A failed extraction does not replace the previous version.
+--force builds a complete staging directory first and then replaces the previous import. A failed extraction does not replace the previous version. MineCPP refuses a destination that contains the source JAR, so `--force` cannot replace the original `.minecraft/versions/<id>` directory by mistake.
+
+For safety, the first importer limits each archive to 2 GiB, each individual compressed or expanded file to 128 MiB, total extracted data to 2 GiB, and the number of ZIP entries to 100,000. Version JSON metadata is limited to 16 MiB.
 
 ### Current boundaries
 
