@@ -44,3 +44,17 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
+      - name: Upload Unix binary
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineCPP-${{ runner.os }}-${{ runner.arch }}
+          path: build/minecpp
+          if-no-files-found: error
+      - name: Upload Windows binary
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineCPP-Windows-${{ runner.arch }}
+          path: build/Release/minecpp.exe
+          if-no-files-found: error
