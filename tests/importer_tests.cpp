@@ -198,12 +198,12 @@ int main() {
             fs::create_directories(bad_version.parent_path());
             fs::copy(imported.version_directory, bad_version, fs::copy_options::recursive);
             std::ofstream manifest(bad_version / "manifest.mcpp", std::ios::binary | std::ios::app);
-            manifest << line << '\\n';
+            manifest << line << '\n';
             manifest.close();
             CHECK(!verify_import("1.20.4", bad_data).ok);
         };
-        expect_bad_manifest("traversal", "ENTRY\\t0\\t00000000\\tclient/%2E%2E/escaped.txt");
-        expect_bad_manifest("negative-size", "ENTRY\\t-1\\t00000000\\tclient/extra.bin");
+        expect_bad_manifest("traversal", "ENTRY\t0\t00000000\tclient/%2E%2E/escaped.txt");
+        expect_bad_manifest("negative-size", "ENTRY\t-1\t00000000\tclient/extra.bin");
 
         const auto versions = list_imports(data_directory);
         CHECK(versions.size() == 1U);
