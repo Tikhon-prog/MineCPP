@@ -94,6 +94,20 @@ std::string safe_archive_path(std::string name, bool& is_directory) {
             (end == std::string::npos ? name.size() : end) - begin);
         if (part.empty() || part == "." || part == ".." || part.find(':') != std::string_view::npos)
             throw std::runtime_error("JAR contains an unsafe path: " + name);
+        if (part.back() == '.' || part.back() == ' ' ||
+            part.find_first_of("<>\"|?*") != std::string_view::npos)
+            throw std::runtime_error("JAR contains a filename that is not portable to Windows: " + name);
+        std::string device_name(part.substr(0, part.find('.')));
+        for (char& ch : device_name) {
+            const auto byte = static_cast<unsigned char>(ch);
+            if (byte >= 'A' && byte <= 'Z') ch = static_cast<char>(byte - 'A' + 'a');
+        }
+        const bool numbered_device = device_name.size() == 4U &&
+            (device_name.rfind("com", 0) == 0 || device_name.rfind("lpt", 0) == 0) &&
+            device_name[3] >= '1' && device_name[3] <= '9';
+        if (device_name == "con" || device_name == "prn" || device_name == "aux" ||
+            device_name == "nul" || numbered_device)
+            throw std::runtime_error("JAR contains a reserved Windows device filename: " + name);
         if (end == std::string::npos) break;
         begin = end + 1;
     }
@@ -570,7 +584,10 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
             }
             throw;
         }
-        if (backed_up) fs::remove_all(backup_directory);
+        if (backed_up) {
+            std::error_code cleanup_backup_error;
+            fs::remove_all(backup_directory, cleanup_backup_error);
+        }
 
         return ImportSummary{
             version_id, source_filename_utf8(absolute_jar), final_directory,
