@@ -549,6 +549,8 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
     if (!fs::exists(jar_path)) throw std::runtime_error("Version JAR not found: " + path_to_utf8(jar_path));
 
     const Json metadata = Json::parse(read_file(json_path));
+    if (!metadata.get_string("inheritsFrom").empty())
+        throw std::runtime_error("Inherited Minecraft versions are not supported in this first release");
     if (!metadata.is_object()) throw std::runtime_error("Version metadata must be a JSON object");
     const Json* metadata_id_value = metadata.get("id");
     if (!metadata_id_value || !metadata_id_value->is_string() || metadata_id_value->string() != id)
@@ -664,6 +666,8 @@ int launch_version(const std::string& id, const std::string& username, const fs:
     if (!fs::exists(json_path) || !fs::exists(jar_path))
         throw std::runtime_error("Profile not imported. Run: minecpp import " + id);
     const Json metadata = Json::parse(read_file(json_path));
+    if (!metadata.get_string("inheritsFrom").empty())
+        throw std::runtime_error("Inherited Minecraft versions are not supported in this first release");
     const fs::path minecraft_dir = minecraft_dir_arg.empty()
         ? path_from_utf8(read_file(profile / "source-game-dir.txt")) : minecraft_dir_arg;
     const fs::path libraries_dir = minecraft_dir / "libraries";
