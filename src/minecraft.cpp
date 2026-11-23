@@ -469,7 +469,11 @@ int launch_version(const std::string& id, const std::string& username, const fs:
     if (metadata.contains("inheritsFrom"))
         throw std::runtime_error("Inherited or modded version metadata is not supported in MineCPP 0.1.0");
 
-    std::vector<fs::path> classpath_entries{fs::absolute(jar_path)};
+    const fs::path extracted_dir = profile / "extracted";
+    if (!fs::exists(extracted_dir)) throw std::runtime_error("Extracted profile data is missing; import the version again.");
+    // Put the extracted client tree first so Java loads the imported files, while
+    // retaining the original JAR in the classpath as a fallback for JAR-specific resources.
+    std::vector<fs::path> classpath_entries{fs::absolute(extracted_dir), fs::absolute(jar_path)};
     std::vector<std::string> missing;
     const fs::path natives_dir = profile / "natives";
     std::error_code ec;
