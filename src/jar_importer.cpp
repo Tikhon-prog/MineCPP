@@ -721,40 +721,43 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
         throw std::runtime_error("Invalid version ID. Use 1.20.4, 26.3, or another simple identifier.");
 
     const fs::path versions_directory = data_directory / "versions";
-    const fs::path final_directory = versions_directory / version_id;
-
-    // Never allow --force to replace a directory that contains the source JAR.
-    // This protects the user's original .minecraft/versions/<id> directory.
-    std::error_code canonical_error;
-    const fs::path canonical_source = fs::weakly_canonical(absolute_jar, canonical_error);
-    if (canonical_error)
-        throw std::runtime_error("Cannot resolve the source JAR location: " + canonical_error.message());
-    const fs::path canonical_destination = fs::weakly_canonical(final_directory, canonical_error);
-    if (canonical_error)
-        throw std::runtime_error("Cannot resolve the import destination: " + canonical_error.message());
-    const fs::path source_relative_to_destination =
-        canonical_source.lexically_relative(canonical_destination);
-    if (canonical_source == canonical_destination) {
-        throw std::runtime_error("Import destination resolves to the source JAR location");
-    }
-    // An empty relative path can also mean that Windows paths are on different drives.
-    // In that case the paths cannot contain one another, so it is safe to proceed.
-    if (!source_relative_to_destination.empty()) {
-        const auto first_relative_component = source_relative_to_destination.begin();
-        if (first_relative_component != source_relative_to_destination.end() &&
-            *first_relative_component != ".." && !source_relative_to_destination.is_absolute()) {
-            throw std::runtime_error(
-                "Unsafe import destination: it contains the source JAR. Choose a separate --data-dir.");
-        }
-    }
-
     fs::create_directories(versions_directory);
-    if (fs::exists(final_directory) && !overwrite)
+    std::error_code directory_error;
+    const fs::file_status versions_status = fs::symlink_status(versions_directory, directory_error);
+    if (directory_error || fs::is_symlink(versions_status) || !fs::is_directory(versions_status))
+        throw std::runtime_error("Minecraft versions path must be a regular directory");
+
+    const fs::path final_directory = versions_directory / version_id;
+    directory_error.clear();
+    const fs::file_status final_status = fs::symlink_status(final_directory, directory_error);
+    const bool has_existing_version =
+        !directory_error && final_status.type() != fs::file_type::not_found;
+    if (directory_error && directory_error != std::errc::no_such_file_or_directory)
+        throw std::runtime_error("Cannot inspect existing version directory: " + directory_error.message());
+    if (has_existing_version && (fs::is_symlink(final_status) || !fs::is_directory(final_status)))
+        throw std::runtime_error("Refusing to replace a version path that is not a regular directory");
+    if (has_existing_version && !overwrite)
         throw std::runtime_error("Version " + version_id + " is already imported; use --force to replace it.");
 
+    const fs::path transactions = versions_directory / ".minecpp-transactions";
+    fs::create_directories(transactions);
+    directory_error.clear();
+    const fs::file_status transactions_status = fs::symlink_status(transactions, directory_error);
+    if (directory_error || fs::is_symlink(transactions_status) || !fs::is_directory(transactions_status))
+        throw std::runtime_error("MineCPP transaction path must be a regular directory");
+
+    const fs::path backup_directory = transactions / (version_id + ".backup");
+    directory_error.clear();
+    const fs::file_status backup_status = fs::symlink_status(backup_directory, directory_error);
+    if (!directory_error && backup_status.type() != fs::file_type::not_found)
+        throw std::runtime_error("An interrupted-import backup exists at " + backup_directory.string() +
+                                 "; recover or rename it before importing again");
+    if (directory_error && directory_error != std::errc::no_such_file_or_directory)
+        throw std::runtime_error("Cannot inspect import backup path: " + directory_error.message());
+
     const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
-    fs::path staging_directory = final_directory;
-    staging_directory += ".staging-" + std::to_string(tick);
+    const fs::path staging_directory =
+        transactions / (version_id + ".staging-" + std::to_string(tick));
     if (!fs::create_directory(staging_directory))
         throw std::runtime_error("Could not reserve a unique staging directory for this import");
 
@@ -797,23 +800,18 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
         manifest.total_bytes = jar_bytes;
         write_manifest(staging_directory / std::string(kManifestName), manifest);
 
-        fs::path backup_directory = final_directory;
-        backup_directory += ".backup";
         bool backed_up = false;
-        if (fs::exists(final_directory)) {
-            if (!overwrite)
-                throw std::runtime_error("This version was imported by another process while extraction was running");
-            if (fs::exists(backup_directory))
-                throw std::runtime_error("Backup path already exists; remove it before using --force: " +
-                                         backup_directory.string());
+        if (has_existing_version) {
             fs::rename(final_directory, backup_directory);
             backed_up = true;
         }
 
         try {
+            if (!has_existing_version && fs::exists(final_directory))
+                throw std::runtime_error("Version appeared while import was running; refusing to overwrite it");
             fs::rename(staging_directory, final_directory);
         } catch (...) {
-            if (backed_up) {
+            if (backed_up && !fs::exists(final_directory) && fs::exists(backup_directory)) {
                 std::error_code restore_error;
                 fs::rename(backup_directory, final_directory, restore_error);
                 if (restore_error)
@@ -822,6 +820,7 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
             }
             throw;
         }
+
         if (backed_up) {
             std::error_code cleanup_backup_error;
             fs::remove_all(backup_directory, cleanup_backup_error);
