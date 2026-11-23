@@ -31,6 +31,7 @@ private:
         std::uint32_t local_header_offset = 0;
     };
     std::filesystem::path file_;
+    std::uint64_t central_directory_offset_ = 0;
     std::vector<Entry> entries_;
 };
 
