@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -461,34 +462,80 @@ void import_version(const std::string& id, const fs::path& minecraft_dir, const 
 
     const fs::path profiles = data_dir / "profiles";
     fs::create_directories(profiles);
-    const fs::path staging = profiles / (id + ".importing");
+    std::error_code status_error;
+    const fs::file_status profiles_status = fs::symlink_status(profiles, status_error);
+    if (status_error || fs::is_symlink(profiles_status) || !fs::is_directory(profiles_status))
+        throw std::runtime_error("MineCPP profiles path must be a regular directory");
+
+    const fs::path transactions = profiles / ".minecpp-transactions";
+    fs::create_directories(transactions);
+    const fs::file_status transactions_status = fs::symlink_status(transactions, status_error);
+    if (status_error || fs::is_symlink(transactions_status) || !fs::is_directory(transactions_status))
+        throw std::runtime_error("MineCPP transaction path must be a regular directory");
+
+    const fs::path staging = transactions /
+        (id + ".staging-" + std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count()));
     const fs::path target = profiles / id;
-    const fs::path backup = profiles / (id + ".previous");
-    std::error_code ec;
-    fs::remove_all(staging, ec);
-    fs::create_directories(staging);
+    const fs::path backup = transactions / (id + ".previous");
+
+    const fs::file_status backup_status = fs::symlink_status(backup, status_error);
+    if (!status_error && backup_status.type() != fs::file_type::not_found)
+        throw std::runtime_error("An interrupted-import backup already exists: " + backup.string() +
+                                 ". Recover or rename it before importing this version again.");
+    if (status_error && status_error != std::errc::no_such_file_or_directory)
+        throw std::runtime_error("Cannot inspect import backup path: " + status_error.message());
+
+    if (!fs::create_directory(staging))
+        throw std::runtime_error("Cannot create a unique import staging directory: " + staging.string());
+
     try {
-        fs::copy_file(jar_path, staging / "client.jar", fs::copy_options::overwrite_existing);
-        fs::copy_file(json_path, staging / "version.json", fs::copy_options::overwrite_existing);
+        fs::copy_file(jar_path, staging / "client.jar", fs::copy_options::none);
+        fs::copy_file(json_path, staging / "version.json", fs::copy_options::none);
         write_file(staging / "source-game-dir.txt", path_to_utf8(fs::absolute(minecraft_dir)));
         std::cout << "Extracting " << archive.count_files() << " JAR entries...\n";
         const std::size_t extracted = archive.extract_all(staging / "extracted");
-        fs::remove_all(backup, ec);
-        const bool had_previous = fs::exists(target);
+
+        status_error.clear();
+        const fs::file_status target_status = fs::symlink_status(target, status_error);
+        const bool had_previous = !status_error && target_status.type() != fs::file_type::not_found;
+        if (status_error && status_error != std::errc::no_such_file_or_directory)
+            throw std::runtime_error("Cannot inspect existing profile: " + status_error.message());
+        if (had_previous && (fs::is_symlink(target_status) || !fs::is_directory(target_status)))
+            throw std::runtime_error("Refusing to replace a profile path that is not a regular directory");
+
         if (had_previous) fs::rename(target, backup);
         try {
+            if (!had_previous && fs::exists(target))
+                throw std::runtime_error("Profile appeared while import was running; refusing to overwrite it");
             fs::rename(staging, target);
-            fs::remove_all(backup, ec);
         } catch (...) {
-            if (had_previous && !fs::exists(target) && fs::exists(backup)) fs::rename(backup, target);
+            if (had_previous && !fs::exists(target) && fs::exists(backup)) {
+                std::error_code restore_error;
+                fs::rename(backup, target, restore_error);
+                if (restore_error)
+                    throw std::runtime_error("New profile could not be published and the previous profile "
+                                             "could not be restored. Backup remains at " + backup.string() +
+                                             ". Restore error: " + restore_error.message());
+            }
             throw;
         }
+
+        if (had_previous) {
+            std::error_code cleanup_error;
+            fs::remove_all(backup, cleanup_error);
+            if (cleanup_error)
+                std::cerr << "Warning: imported successfully, but the previous profile backup remains at "
+                          << backup.string() << ": " << cleanup_error.message() << '\n';
+        }
+
         std::cout << "Imported Minecraft " << id << " successfully.\n"
-                  << "  Profile: " << target << "\n"
+                  << "  Profile: " << path_to_utf8(target) << "\n"
                   << "  Extracted files: " << extracted << "\n"
                   << "  Original installation was not modified.\n";
     } catch (...) {
-        fs::remove_all(staging, ec);
+        std::error_code cleanup_error;
+        fs::remove_all(staging, cleanup_error);
         throw;
     }
 }
