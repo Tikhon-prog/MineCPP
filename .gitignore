@@ -1,10 +1,9 @@
 /build/
 /cmake-build-*/
+/out/
+/worlds/
+*.mcw
+*.mcw.tmp
 *.log
-*.tmp
 .DS_Store
 Thumbs.db
-# Local game files and extracted Minecraft data must never be committed.
-.local/
-.minecpp/
-MineCPP-data/

@@ -1,4 +1,4 @@
-name: Build
+name: Native build
 
 on:
   push:
@@ -17,34 +17,38 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-      - name: Install Linux dependency
+      - name: Install Linux dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev
-      - name: Install macOS dependency
+        run: sudo apt-get update && sudo apt-get install -y libglfw3-dev libgl1-mesa-dev
+      - name: Install macOS dependencies
         if: runner.os == 'macOS'
-        run: brew install zlib
-      - name: Install Windows dependency
+        run: brew install glfw
+      - name: Install Windows dependencies
         if: runner.os == 'Windows'
-        run: vcpkg install zlib:x64-windows-static
-      - name: Configure (Windows)
+        run: vcpkg install glfw3:x64-windows-static
+      - name: Configure Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
-      - name: Configure (Unix)
+      - name: Configure Unix
         if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Upload Unix binary
+      - name: Upload Linux binary
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: MineCPP-Linux-${{ runner.arch }}
+          path: build/minecpp
+          if-no-files-found: error
+      - name: Upload macOS binary
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: MineCPP-macOS-${{ runner.arch }}
           path: build/minecpp
           if-no-files-found: error
       - name: Upload Windows binary

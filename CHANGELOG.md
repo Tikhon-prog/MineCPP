@@ -1,13 +1,11 @@
 # Changelog
 
-## 0.1.0 — First public implementation
+## 0.1.0 — Native voxel prototype
 
-- Created the C++20 CLI application and CMake build.
-- Added local installed-version discovery and MineCPP profile listing.
-- Added JAR inspection and ZIP/JAR extraction for stored and deflate entries.
-- Added CRC validation and path traversal protection during extraction.
-- Added transactional version import into an isolated MineCPP profile.
-- Added local vanilla Java launch preparation using existing libraries, assets and native classifiers.
-- Added offline player identity, legacy and modern game argument handling, and dry-run output.
-- Added integration tests for ZIP import, unsafe paths, local dependencies, native extraction and offline launch arguments.
-- Added GitHub Actions builds for Linux, Windows and macOS.
+- Start the project as a native C++20 voxel sandbox instead of a Java launcher.
+- Add deterministic terrain generation and 16×16 chunk storage.
+- Generate chunks and chunk meshes on a background worker pool.
+- Add first-person movement, collision, jumping, sprinting, and mouse look.
+- Add block selection, block breaking, and placement.
+- Persist world seed and block edits.
+- Add CMake, native world tests, and Linux/Windows/macOS GitHub Actions builds.
