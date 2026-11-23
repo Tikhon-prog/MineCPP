@@ -123,6 +123,13 @@ std::string lower_ascii(std::string value) {
     return value;
 }
 
+fs::path path_from_utf8(std::string_view value) {
+    std::u8string encoded;
+    encoded.reserve(value.size());
+    for (const unsigned char byte : value) encoded.push_back(static_cast<char8_t>(byte));
+    return fs::path(encoded);
+}
+
 std::string percent_encode(std::string_view value) {
     constexpr char digits[] = "0123456789ABCDEF";
     std::string result;
@@ -426,7 +433,7 @@ std::vector<FileRecord> extract_archive(const fs::path& jar_path, const fs::path
             throw std::runtime_error("JAR contains a symbolic link, which is not extracted");
 
         cursor += header.size() + variable_size;
-        const fs::path destination = output_directory / fs::u8path(relative_name);
+        const fs::path destination = output_directory / path_from_utf8(relative_name);
         if (is_directory) {
             fs::create_directories(destination);
             continue;
@@ -549,7 +556,7 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
             absolute_jar, staging_directory / "client", jar_bytes);
 
         bool copied_metadata = false;
-        const fs::path metadata_source = absolute_jar.parent_path() / fs::u8path(version_id + ".json");
+        const fs::path metadata_source = absolute_jar.parent_path() / path_from_utf8(version_id + ".json");
         if (fs::is_regular_file(metadata_source)) {
             const std::uint64_t metadata_size = fs::file_size(metadata_source);
             if (metadata_size > 16U * 1024U * 1024U)
@@ -652,7 +659,7 @@ VerificationResult verify_import(const std::string& version_id, const fs::path& 
 
         std::uint64_t summed_bytes = 0;
         for (const auto& record : manifest.files) {
-            const fs::path file = directory / fs::u8path(record.relative_path);
+            const fs::path file = directory / path_from_utf8(record.relative_path);
             if (!fs::is_regular_file(file)) {
                 result.errors.push_back("Missing file: " + record.relative_path);
                 continue;
