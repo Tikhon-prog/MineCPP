@@ -637,8 +637,30 @@ ImportSummary import_jar(const fs::path& jar_path, const fs::path& data_director
         throw std::runtime_error("Invalid version ID. Use 1.20.4, 26.3, or another simple identifier.");
 
     const fs::path versions_directory = data_directory / "versions";
-    fs::create_directories(versions_directory);
     const fs::path final_directory = versions_directory / version_id;
+
+    // Never allow --force to replace a directory that contains the source JAR.
+    // This protects the user's original .minecraft/versions/<id> directory.
+    std::error_code canonical_error;
+    const fs::path canonical_source = fs::weakly_canonical(absolute_jar, canonical_error);
+    if (canonical_error)
+        throw std::runtime_error("Cannot resolve the source JAR location: " + canonical_error.message());
+    const fs::path canonical_destination = fs::weakly_canonical(final_directory, canonical_error);
+    if (canonical_error)
+        throw std::runtime_error("Cannot resolve the import destination: " + canonical_error.message());
+    const fs::path source_relative_to_destination =
+        canonical_source.lexically_relative(canonical_destination);
+    if (source_relative_to_destination.empty()) {
+        throw std::runtime_error("Import destination resolves to the source JAR location");
+    }
+    const auto first_relative_component = source_relative_to_destination.begin();
+    if (first_relative_component != source_relative_to_destination.end() &&
+        *first_relative_component != ".." && !source_relative_to_destination.is_absolute()) {
+        throw std::runtime_error(
+            "Unsafe import destination: it contains the source JAR. Choose a separate --data-dir.");
+    }
+
+    fs::create_directories(versions_directory);
     if (fs::exists(final_directory) && !overwrite)
         throw std::runtime_error("Version " + version_id + " is already imported; use --force to replace it.");
 
@@ -778,18 +800,3 @@ VerificationResult verify_import(const std::string& version_id, const fs::path& 
                 result.errors.push_back(error.what());
             }
             summed_bytes += record.size;
-        }
-
-        if (summed_bytes != manifest.total_bytes)
-            result.errors.push_back("Manifest total byte count is inconsistent");
-        if (manifest.files.size() != manifest.file_count)
-            result.errors.push_back("Manifest file count is inconsistent");
-    } catch (const std::exception& error) {
-        result.errors.push_back(error.what());
-    }
-
-    result.ok = result.errors.empty() && result.checked_files > 0;
-    return result;
-}
-
-} // namespace minecpp::launcher
