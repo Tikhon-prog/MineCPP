@@ -40,6 +40,18 @@ namespace minecpp {
 namespace fs = std::filesystem;
 namespace {
 
+#ifdef _WIN32
+fs::path windows_environment_path(const wchar_t* name) {
+    const DWORD required = GetEnvironmentVariableW(name, nullptr, 0);
+    if (required <= 1U) return {};
+    std::wstring value(static_cast<std::size_t>(required), L'\\0');
+    const DWORD written = GetEnvironmentVariableW(name, value.data(), required);
+    if (written == 0U || written >= required) return {};
+    value.resize(static_cast<std::size_t>(written));
+    return fs::path(value);
+}
+#endif
+
 std::string path_to_utf8(const fs::path& path) {
     const auto encoded = path.u8string();
     return std::string(reinterpret_cast<const char*>(encoded.data()), encoded.size());
@@ -454,27 +466,31 @@ fs::path version_source_folder(const fs::path& minecraft_dir, const std::string&
 
 fs::path default_minecraft_dir() {
 #ifdef _WIN32
-    if (const char* appdata = std::getenv("APPDATA")) return fs::path(appdata) / ".minecraft";
-    if (const char* home = std::getenv("USERPROFILE")) return fs::path(home) / "AppData" / "Roaming" / ".minecraft";
-#elif defined(__APPLE__)
-    if (const char* home = std::getenv("HOME")) return fs::path(home) / "Library" / "Application Support" / "minecraft";
+    const fs::path appdata = windows_environment_path(L"APPDATA");
+    if (!appdata.empty()) return appdata / L".minecraft";
+    const fs::path profile = windows_environment_path(L"USERPROFILE");
+    if (!profile.empty()) return profile / L"AppData" / L"Roaming" / L".minecraft";
 #else
-    if (const char* home = std::getenv("HOME")) return fs::path(home) / ".minecraft";
+    if (const char* home = std::getenv("HOME"))
+        return fs::path(home) / ".minecraft";
 #endif
     return fs::current_path() / ".minecraft";
 }
 
 fs::path default_data_dir() {
 #ifdef _WIN32
-    if (const char* local = std::getenv("LOCALAPPDATA")) return fs::path(local) / "MineCPP";
-    if (const char* home = std::getenv("USERPROFILE")) return fs::path(home) / "AppData" / "Local" / "MineCPP";
-#elif defined(__APPLE__)
-    if (const char* home = std::getenv("HOME")) return fs::path(home) / "Library" / "Application Support" / "MineCPP";
+    fs::path base = windows_environment_path(L"LOCALAPPDATA");
+    if (base.empty()) base = windows_environment_path(L"APPDATA");
+    if (!base.empty()) return base / L"MineCPP";
+    const fs::path profile = windows_environment_path(L"USERPROFILE");
+    if (!profile.empty()) return profile / L"AppData" / L"Local" / L"MineCPP";
 #else
-    if (const char* xdg = std::getenv("XDG_DATA_HOME")) return fs::path(xdg) / "MineCPP";
-    if (const char* home = std::getenv("HOME")) return fs::path(home) / ".local" / "share" / "MineCPP";
+    if (const char* xdg = std::getenv("XDG_DATA_HOME"))
+        return fs::path(xdg) / "minecpp";
+    if (const char* home = std::getenv("HOME"))
+        return fs::path(home) / ".local" / "share" / "minecpp";
 #endif
-    return fs::current_path() / ".minecpp";
+    return fs::current_path() / "minecpp-data";
 }
 
 void list_versions(const fs::path& minecraft_dir) {
