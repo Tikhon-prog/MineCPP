@@ -284,7 +284,12 @@ Manifest read_manifest(const fs::path& directory) {
     if (!std::getline(input, line) || line != "MINECPP_IMPORT\t1")
         throw std::runtime_error("Unsupported or damaged MineCPP import manifest");
 
+    const fs::file_status manifest_status = fs::symlink_status(manifest_path, size_error);
+    if (size_error || fs::is_symlink(manifest_status) || !fs::is_regular_file(manifest_status))
+        throw std::runtime_error("Import manifest must be a regular, non-symlink file");
+
     Manifest manifest;
+    std::set<std::string> manifest_paths;
     bool got_version = false;
     bool got_source = false;
     bool got_count = false;
@@ -353,11 +358,7 @@ Manifest read_manifest(const fs::path& directory) {
                 record.size > 16ULL * 1024ULL * 1024ULL) {
                 throw std::runtime_error("Version metadata exceeds the 16 MiB safety limit");
             }
-            const auto duplicate = std::find_if(manifest.files.begin(), manifest.files.end(),
-                [&](const FileRecord& existing) {
-                    return lower_ascii(existing.relative_path) == lower_ascii(record.relative_path);
-                });
-            if (duplicate != manifest.files.end())
+            if (!manifest_paths.insert(lower_ascii(record.relative_path)).second)
                 throw std::runtime_error("Duplicate path in import manifest");
             manifest.files.push_back(std::move(record));
         } else {
@@ -584,6 +585,28 @@ std::string source_filename_utf8(const fs::path& path) {
     return path_utf8(path.filename());
 }
 
+bool is_regular_file_without_symlinks(const fs::path& root, const std::string& relative_path) {
+    std::error_code error;
+    const fs::file_status root_status = fs::symlink_status(root, error);
+    if (error || fs::is_symlink(root_status) || !fs::is_directory(root_status)) return false;
+
+    fs::path current = root;
+    const fs::path relative = path_from_utf8(relative_path);
+    if (relative.empty() || relative.is_absolute()) return false;
+
+    auto component = relative.begin();
+    while (component != relative.end()) {
+        current /= *component;
+        ++component;
+        const fs::file_status status = fs::symlink_status(current, error);
+        if (error || fs::is_symlink(status)) return false;
+        const bool last = component == relative.end();
+        if (last) return fs::is_regular_file(status);
+        if (!fs::is_directory(status)) return false;
+    }
+    return false;
+}
+
 } // namespace
 
 bool valid_version_id(const std::string& value) {
@@ -700,7 +723,9 @@ std::vector<ImportedVersion> list_imports(const fs::path& data_directory) {
     const fs::path root = data_directory / "versions";
     if (!fs::exists(root)) return versions;
     for (const auto& entry : fs::directory_iterator(root)) {
-        if (!entry.is_directory()) continue;
+        std::error_code status_error;
+        const fs::file_status status = entry.symlink_status(status_error);
+        if (status_error || fs::is_symlink(status) || !fs::is_directory(status)) continue;
         try {
             const Manifest manifest = read_manifest(entry.path());
             if (entry.path().filename().string() != manifest.version_id) continue;
@@ -735,8 +760,8 @@ VerificationResult verify_import(const std::string& version_id, const fs::path& 
         std::uint64_t summed_bytes = 0;
         for (const auto& record : manifest.files) {
             const fs::path file = directory / path_from_utf8(record.relative_path);
-            if (!fs::is_regular_file(file)) {
-                result.errors.push_back("Missing file: " + record.relative_path);
+            if (!is_regular_file_without_symlinks(directory, record.relative_path)) {
+                result.errors.push_back("Missing or unsafe (symlink/non-regular) file: " + record.relative_path);
                 continue;
             }
             try {
