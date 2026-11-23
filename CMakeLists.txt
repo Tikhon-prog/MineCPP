@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 if(MSVC)
-    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded<$<CONFIG:Debug>:Debug>")
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 find_package(Threads REQUIRED)
@@ -20,20 +20,20 @@ add_library(minecpp_world STATIC
     src/world.cpp
     src/mesh.cpp
 )
-target_include_directories(minecpp_world PUBLIC \${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(minecpp_world PUBLIC src)
 target_link_libraries(minecpp_world PUBLIC Threads::Threads)
 
 add_library(minecpp_import STATIC
     src/jar_importer.cpp
 )
-target_include_directories(minecpp_import PUBLIC \${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(minecpp_import PUBLIC src)
 target_link_libraries(minecpp_import PUBLIC ZLIB::ZLIB)
 
 add_executable(minecpp
     src/main.cpp
     src/renderer.cpp
 )
-target_include_directories(minecpp PRIVATE \${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_include_directories(minecpp PRIVATE src)
 target_link_libraries(minecpp PRIVATE minecpp_world glfw OpenGL::GL)
 
 add_executable(minecpp-launcher
