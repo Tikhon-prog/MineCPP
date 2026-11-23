@@ -4,7 +4,7 @@
 #include "mesh.hpp"
 #include "world.hpp"
 
-#include <cassert>
+#include <stdexcept>
 #include <cstddef>
 #include <chrono>
 #include <filesystem>
@@ -14,37 +14,39 @@
 
 using namespace minecpp;
 
+#define CHECK(expression) do { if (!(expression)) throw std::runtime_error("Test failed: " #expression); } while (false)
+
 int main() {
-    assert(floor_div(0, 16) == 0);
-    assert(floor_div(15, 16) == 0);
-    assert(floor_div(16, 16) == 1);
-    assert(floor_div(-1, 16) == -1);
-    assert(floor_div(-16, 16) == -1);
-    assert(floor_div(-17, 16) == -2);
-    assert(positive_mod(-1, 16) == 15);
+    CHECK(floor_div(0, 16) == 0);
+    CHECK(floor_div(15, 16) == 0);
+    CHECK(floor_div(16, 16) == 1);
+    CHECK(floor_div(-1, 16) == -1);
+    CHECK(floor_div(-16, 16) == -1);
+    CHECK(floor_div(-17, 16) == -2);
+    CHECK(positive_mod(-1, 16) == 15);
 
     for (int z = -400; z <= 400; z += 37) {
         for (int x = -400; x <= 400; x += 41) {
             const int height = World::terrain_height(1337U, x, z);
-            assert(height >= 7 && height <= 82);
-            assert(height == World::terrain_height(1337U, x, z));
+            CHECK(height >= 7 && height <= 82);
+            CHECK(height == World::terrain_height(1337U, x, z));
         }
     }
 
     const auto generated_a = World::generate_chunk_blocks({-2, 3}, 12345U);
     const auto generated_b = World::generate_chunk_blocks({-2, 3}, 12345U);
-    assert(generated_a.size() == static_cast<std::size_t>(kChunkSize * kWorldHeight * kChunkSize));
-    assert(generated_a == generated_b);
+    CHECK(generated_a.size() == static_cast<std::size_t>(kChunkSize * kWorldHeight * kChunkSize));
+    CHECK(generated_a == generated_b);
 
     for (int z = 0; z < kChunkSize; ++z) {
         for (int x = 0; x < kChunkSize; ++x) {
-            assert(generated_a[block_index(x, 0, z)] == Block::Bedrock);
+            CHECK(generated_a[block_index(x, 0, z)] == Block::Bedrock);
             const int world_x = -2 * kChunkSize + x;
             const int world_z = 3 * kChunkSize + z;
             const int top = World::terrain_height(12345U, world_x, world_z);
             const Block surface = generated_a[block_index(x, top, z)];
-            assert(surface == Block::Grass || surface == Block::Sand);
-            assert(generated_a[block_index(x, top + 1, z)] == Block::Air ||
+            CHECK(surface == Block::Grass || surface == Block::Sand);
+            CHECK(generated_a[block_index(x, top + 1, z)] == Block::Air ||
                    generated_a[block_index(x, top + 1, z)] == Block::Wood ||
                    generated_a[block_index(x, top + 1, z)] == Block::Leaves);
         }
@@ -52,8 +54,8 @@ int main() {
 
     const BlockEdit edit{{-31, 20, 49}, Block::Wood};
     const auto edited = World::generate_chunk_blocks({-2, 3}, 12345U, {edit});
-    assert(edited[block_index(1, 20, 1)] == Block::Wood);
-    assert(edited != generated_a);
+    CHECK(edited[block_index(1, 20, 1)] == Block::Wood);
+    CHECK(edited != generated_a);
 
     ChunkSnapshot one;
     one.position = {0, 0};
@@ -63,10 +65,10 @@ int main() {
                (kChunkSize + 2) + static_cast<std::size_t>(x + 1);
     };
     one.blocks[snapshot_index(4, 10, 4)] = Block::Stone;
-    assert(build_chunk_mesh(one).size() == 36U);
+    CHECK(build_chunk_mesh(one).size() == 36U);
 
     one.blocks[snapshot_index(5, 10, 4)] = Block::Dirt;
-    assert(build_chunk_mesh(one).size() == 60U);
+    CHECK(build_chunk_mesh(one).size() == 60U);
 
     const auto save_path = std::filesystem::temp_directory_path() / "minecpp-world-tests.mcw";
     std::error_code remove_error;
@@ -80,15 +82,15 @@ int main() {
             ready = world.has_spawn_chunk();
             if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        assert(ready);
+        CHECK(ready);
         const int ground = World::terrain_height(world.seed(), 1, 1);
-        assert(world.set_block(1, ground + 1, 1, Block::Wood));
+        CHECK(world.set_block(1, ground + 1, 1, Block::Wood));
         world.save(save_path);
     }
     {
         World restored(1U, 2);
         restored.load(save_path);
-        assert(restored.seed() == 24680U);
+        CHECK(restored.seed() == 24680U);
         bool ready = false;
         for (int attempt = 0; attempt < 10000 && !ready; ++attempt) {
             restored.update_streaming(8, 8);
@@ -96,9 +98,9 @@ int main() {
             ready = restored.has_spawn_chunk();
             if (!ready) std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
-        assert(ready);
+        CHECK(ready);
         const int ground = World::terrain_height(restored.seed(), 1, 1);
-        assert(restored.get_block(1, ground + 1, 1) == Block::Wood);
+        CHECK(restored.get_block(1, ground + 1, 1) == Block::Wood);
     }
     std::filesystem::remove(save_path, remove_error);
 
