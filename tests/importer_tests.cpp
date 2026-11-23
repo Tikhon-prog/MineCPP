@@ -258,6 +258,16 @@ int main() {
             (void)import_jar(symlink_jar, data_directory, "1.20.8");
         });
 
+        const fs::path duplicate_jar = temporary / "duplicate-paths.jar";
+        write_zip(duplicate_jar, {
+            {"net/minecraft/client/main/Main.class", "class", false, false},
+            {"assets/test.txt", "first", false, false},
+            {"ASSETS/TEST.TXT", "second", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(duplicate_jar, data_directory, "1.20.9");
+        });
+
         const fs::path device_jar = temporary / "windows-device.jar";
         write_zip(device_jar, {
             {"CON.txt", "reserved device name", false, false},
