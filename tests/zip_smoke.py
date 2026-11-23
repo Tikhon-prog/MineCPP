@@ -36,4 +36,25 @@ with zipfile.ZipFile(unsafe, "w", compression=zipfile.ZIP_DEFLATED) as jar:
 result = subprocess.run([str(exe), "extract", str(unsafe), "--output", str(out / "unsafe")], capture_output=True, text=True)
 assert result.returncode != 0, "unsafe ZIP entry unexpectedly extracted"
 assert not (out.parent / "escaped.txt").exists()
+
+# A pre-existing symlink inside the destination must not redirect extraction outside it.
+outside = out.parent / "symlink-outside"
+symlink_root = out.parent / "symlink-root"
+shutil.rmtree(outside, ignore_errors=True)
+shutil.rmtree(symlink_root, ignore_errors=True)
+outside.mkdir()
+symlink_root.mkdir()
+try:
+    (symlink_root / "redirect").symlink_to(outside, target_is_directory=True)
+except (OSError, NotImplementedError):
+    pass  # Some Windows runners do not grant symlink creation privileges.
+else:
+    symlink_archive = out.parent / "minecpp-symlink.jar"
+    with zipfile.ZipFile(symlink_archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
+        jar.writestr("redirect/escaped.txt", "must stay out")
+    result = subprocess.run([str(exe), "extract", str(symlink_archive), "--output", str(symlink_root)],
+                            capture_output=True, text=True)
+    assert result.returncode != 0, "symlink redirection was unexpectedly accepted"
+    assert not (outside / "escaped.txt").exists(), "ZIP entry escaped through a pre-existing symlink"
+
 print("MineCPP ZIP smoke test passed")
