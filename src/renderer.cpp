@@ -335,6 +335,34 @@ void Game::render() {
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
 
+    BlockPos targeted_block{}, adjacent_air{};
+    if (raycast(targeted_block, adjacent_air)) {
+        const float x0 = static_cast<float>(targeted_block.x) - 0.002F;
+        const float y0 = static_cast<float>(targeted_block.y) - 0.002F;
+        const float z0 = static_cast<float>(targeted_block.z) - 0.002F;
+        const float x1 = x0 + 1.004F;
+        const float y1 = y0 + 1.004F;
+        const float z1 = z0 + 1.004F;
+        const std::array<Vec3, 8> corners{{
+            {x0,y0,z0}, {x1,y0,z0}, {x1,y0,z1}, {x0,y0,z1},
+            {x0,y1,z0}, {x1,y1,z0}, {x1,y1,z1}, {x0,y1,z1}
+        }};
+        constexpr std::array<int, 24> edges{
+            0,1, 1,2, 2,3, 3,0,
+            4,5, 5,6, 6,7, 7,4,
+            0,4, 1,5, 2,6, 3,7
+        };
+        glColor3f(0.06F, 0.06F, 0.06F);
+        glLineWidth(2.0F);
+        glBegin(GL_LINES);
+        for (int index : edges) {
+            const Vec3& vertex = corners[static_cast<std::size_t>(index)];
+            glVertex3f(vertex.x, vertex.y, vertex.z);
+        }
+        glEnd();
+        glLineWidth(1.0F);
+    }
+
     glDisable(GL_DEPTH_TEST);
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
