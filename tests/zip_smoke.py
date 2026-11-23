@@ -66,6 +66,13 @@ result = subprocess.run([str(exe), "extract", str(duplicate_archive), "--output"
                         capture_output=True, text=True)
 assert result.returncode != 0, "case-colliding ZIP paths were unexpectedly accepted"
 
+reserved_archive = out.parent / "minecpp-reserved-name.jar"
+with zipfile.ZipFile(reserved_archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
+    jar.writestr("CON.txt", "reserved on Windows")
+result = subprocess.run([str(exe), "extract", str(reserved_archive), "--output", str(out / "reserved")],
+                        capture_output=True, text=True)
+assert result.returncode != 0, "a Windows reserved device filename was unexpectedly accepted"
+
 # Unix symbolic links are metadata, not ordinary files; do not unpack them as files.
 import stat
 symlink_entry_archive = out.parent / "minecpp-symlink-entry.jar"
