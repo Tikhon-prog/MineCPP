@@ -341,6 +341,16 @@ int main() {
             (void)import_jar(corrupt_jar, data_directory, "1.20.6");
         });
 
+        const fs::path invalid_utf8_jar = temporary / "invalid-utf8.jar";
+        const std::string invalid_name = std::string("bad-") + static_cast<char>(0xff);
+        write_zip(invalid_utf8_jar, {
+            {invalid_name, "invalid filename", false, false},
+            {"net/minecraft/client/main/Main.class", "class", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(invalid_utf8_jar, data_directory, "1.20.10");
+        });
+
         const fs::path duplicate_jar = temporary / "case-collision.jar";
         write_zip(duplicate_jar, {
             {"net/minecraft/client/main/Main.class", "class", false, false},
