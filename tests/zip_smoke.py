@@ -51,10 +51,31 @@ except (OSError, NotImplementedError):
 else:
     symlink_archive = out.parent / "minecpp-symlink.jar"
     with zipfile.ZipFile(symlink_archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
-        jar.writestr("redirect/escaped.txt", "must stay out")
+        jar.writestr("redirect/subdir/escaped.txt", "must stay out")
     result = subprocess.run([str(exe), "extract", str(symlink_archive), "--output", str(symlink_root)],
                             capture_output=True, text=True)
     assert result.returncode != 0, "symlink redirection was unexpectedly accepted"
-    assert not (outside / "escaped.txt").exists(), "ZIP entry escaped through a pre-existing symlink"
+    assert not (outside / "subdir" / "escaped.txt").exists(), "ZIP entry escaped through a pre-existing symlink"
+
+# Case-insensitive collisions must be rejected even when the host filesystem is case-sensitive.
+duplicate_archive = out.parent / "minecpp-duplicate.jar"
+with zipfile.ZipFile(duplicate_archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
+    jar.writestr("textures/Stone.png", b"first")
+    jar.writestr("textures/stone.png", b"second")
+result = subprocess.run([str(exe), "extract", str(duplicate_archive), "--output", str(out / "duplicate")],
+                        capture_output=True, text=True)
+assert result.returncode != 0, "case-colliding ZIP paths were unexpectedly accepted"
+
+# Unix symbolic links are metadata, not ordinary files; do not unpack them as files.
+import stat
+symlink_entry_archive = out.parent / "minecpp-symlink-entry.jar"
+with zipfile.ZipFile(symlink_entry_archive, "w", compression=zipfile.ZIP_DEFLATED) as jar:
+    link = zipfile.ZipInfo("link")
+    link.create_system = 3
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    jar.writestr(link, "outside")
+result = subprocess.run([str(exe), "extract", str(symlink_entry_archive), "--output", str(out / "symlink-entry")],
+                        capture_output=True, text=True)
+assert result.returncode != 0, "a ZIP symbolic-link entry was unexpectedly accepted"
 
 print("MineCPP ZIP smoke test passed")
