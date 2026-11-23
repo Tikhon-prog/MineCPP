@@ -86,6 +86,29 @@ subprocess.run([str(exe), "import", version, "--jar", str(external_jar), "--meta
                 "--minecraft-dir", str(minecraft), "--data-dir", str(external_data)], check=True, capture_output=True, text=True)
 assert (external_data / "profiles" / version / "extracted" / "net/minecraft/client/main/Main.class").is_file()
 
+# Legacy versions use minecraftArguments and the virtual/legacy asset tree.
+legacy_id = "1.7.10"
+legacy_dir = minecraft / "versions" / legacy_id
+legacy_dir.mkdir(parents=True)
+legacy_jar = legacy_dir / f"{legacy_id}.jar"
+with zipfile.ZipFile(legacy_jar, "w", zipfile.ZIP_DEFLATED) as jar:
+    jar.writestr("net/minecraft/client/main/Main.class", b"legacy-class")
+legacy_metadata = {
+    "id": legacy_id,
+    "type": "release",
+    "mainClass": "net.minecraft.client.main.Main",
+    "assets": "legacy",
+    "minecraftArguments": "--username ${auth_player_name} --version ${version_name} --gameDir ${game_directory} --assetsDir ${assets_root} --gameAssets ${game_assets} --uuid ${auth_uuid} --accessToken ${auth_access_token}"
+}
+(legacy_dir / f"{legacy_id}.json").write_text(json.dumps(legacy_metadata), encoding="utf-8")
+(minecraft / "assets" / "virtual" / "legacy").mkdir(parents=True)
+subprocess.run([str(exe), "import", legacy_id, "--minecraft-dir", str(minecraft), "--data-dir", str(data)],
+               check=True, capture_output=True, text=True)
+legacy_run = subprocess.run([str(exe), "launch", legacy_id, "--username", "Tikhon", "--minecraft-dir", str(minecraft),
+                             "--data-dir", str(data), "--dry-run"], check=True, capture_output=True, text=True)
+assert "--gameAssets " + str(minecraft / "assets" / "virtual" / "legacy") in legacy_run.stdout, legacy_run.stdout
+assert "--username Tikhon" in legacy_run.stdout, legacy_run.stdout
+
 # A failed re-import must not delete the previously imported working profile.
 (version_dir / f"{version}.jar").write_bytes(b"not a zip file")
 failed = subprocess.run([str(exe), "import", version, "--minecraft-dir", str(minecraft), "--data-dir", str(data)],
