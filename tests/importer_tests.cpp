@@ -215,6 +215,15 @@ int main() {
         });
         CHECK(!fs::exists(data_directory / "versions" / "escaped.txt"));
 
+        const fs::path device_jar = temporary / "windows-device.jar";
+        write_zip(device_jar, {
+            {"CON.txt", "reserved device name", false, false},
+            {"net/minecraft/client/main/Main.class", "class", false, false}
+        });
+        expect_throw([&] {
+            (void)import_jar(device_jar, data_directory, "1.20.7");
+        });
+
         const fs::path corrupt_jar = temporary / "corrupt.jar";
         write_zip(corrupt_jar, {
             {"net/minecraft/client/main/Main.class", "class bytes", true, true}
