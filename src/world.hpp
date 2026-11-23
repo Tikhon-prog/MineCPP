@@ -13,6 +13,8 @@
 
 namespace minecpp {
 
+struct ChunkSnapshot;
+
 class World {
 public:
     explicit World(std::uint32_t seed = 1337U, int render_distance = 4);
