@@ -201,6 +201,10 @@ int main() {
         CHECK(!damaged.ok);
         CHECK(!damaged.errors.empty());
 
+        const ImportSummary replaced = import_jar(jar, data_directory, "1.20.4", true);
+        CHECK(replaced.version_id == "1.20.4");
+        CHECK(verify_import("1.20.4", data_directory).ok);
+
         const fs::path malicious_jar = temporary / "malicious.jar";
         write_zip(malicious_jar, {
             {"../../escaped.txt", "must never be extracted", false, false},
