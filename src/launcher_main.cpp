@@ -6,7 +6,18 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 namespace fs = std::filesystem;
 using minecpp::launcher::ImportSummary;
@@ -14,6 +25,19 @@ using minecpp::launcher::ImportedVersion;
 using minecpp::launcher::VerificationResult;
 
 namespace {
+
+fs::path path_from_utf8(std::string_view value) {
+    std::u8string encoded;
+    encoded.reserve(value.size());
+    for (const unsigned char byte : value)
+        encoded.push_back(static_cast<char8_t>(byte));
+    return fs::path(encoded);
+}
+
+std::string path_to_utf8(const fs::path& path) {
+    const std::u8string value = path.u8string();
+    return std::string(reinterpret_cast<const char*>(value.data()), value.size());
+}
 
 void print_version() {
     std::cout << "MineCPP Launcher 0.1.0\n";
@@ -27,7 +51,7 @@ void print_help() {
         << "  minecpp-launcher list [options]\n"
         << "  minecpp-launcher verify <version-id> [options]\n\n"
         << "Options:\n"
-        << "  --id ID          Version identifier (defaults to the JAR filename)\n"
+        << "  --id ID          Version identifier (defaults to the JAR name or folder)\n"
         << "  --data-dir PATH  Import directory (default: minecpp-data)\n"
         << "  --force          Replace an already imported version safely\n"
         << "  --version        Show launcher version\n"
@@ -52,7 +76,7 @@ CommonOptions parse_common_options(int argc, char** argv, int begin) {
         const std::string argument = argv[i];
         if (argument == "--data-dir") {
             if (++i >= argc) throw std::runtime_error("Missing path after --data-dir");
-            options.data_directory = argv[i];
+            options.data_directory = path_from_utf8(argv[i]);
         } else if (argument == "-h" || argument == "--help") {
             print_help();
             std::exit(0);
@@ -75,7 +99,7 @@ void print_import_summary(const ImportSummary& summary) {
 
 int command_import(int argc, char** argv) {
     if (argc < 3) throw std::runtime_error("import requires a path to an existing .jar file");
-    const fs::path jar_path = argv[2];
+    const fs::path jar_path = path_from_utf8(argv[2]);
     std::string version_id;
     bool force = false;
     CommonOptions common;
@@ -87,7 +111,7 @@ int command_import(int argc, char** argv) {
             version_id = argv[i];
         } else if (argument == "--data-dir") {
             if (++i >= argc) throw std::runtime_error("Missing path after --data-dir");
-            common.data_directory = argv[i];
+            common.data_directory = path_from_utf8(argv[i]);
         } else if (argument == "--force") {
             force = true;
         } else if (argument == "-h" || argument == "--help") {
@@ -110,7 +134,7 @@ int command_list(int argc, char** argv) {
         minecpp::launcher::list_imports(common.data_directory);
     if (versions.empty()) {
         std::cout << "No imported versions found in "
-                  << (common.data_directory / "versions").string() << "\n";
+                  << path_to_utf8(common.data_directory / "versions") << "\n";
         return 0;
     }
 
@@ -144,7 +168,7 @@ int command_verify(int argc, char** argv) {
 
 } // namespace
 
-int main(int argc, char** argv) {
+int launcher_main(int argc, char** argv) {
     try {
         if (argc < 2 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
             print_help();
@@ -165,3 +189,40 @@ int main(int argc, char** argv) {
         return 1;
     }
 }
+
+#ifdef _WIN32
+int wmain(int argc, wchar_t** wide_argv) {
+    std::vector<std::string> utf8_arguments;
+    utf8_arguments.reserve(static_cast<std::size_t>(argc));
+
+    for (int index = 0; index < argc; ++index) {
+        const int required = WideCharToMultiByte(
+            CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[index], -1,
+            nullptr, 0, nullptr, nullptr);
+        if (required <= 0) {
+            std::cerr << "MineCPP Launcher: cannot convert a Windows command-line argument to UTF-8\n";
+            return 1;
+        }
+
+        std::string converted(static_cast<std::size_t>(required), '\0');
+        if (WideCharToMultiByte(
+                CP_UTF8, WC_ERR_INVALID_CHARS, wide_argv[index], -1,
+                converted.data(), required, nullptr, nullptr) <= 0) {
+            std::cerr << "MineCPP Launcher: cannot convert a Windows command-line argument to UTF-8\n";
+            return 1;
+        }
+        converted.pop_back();
+        utf8_arguments.push_back(std::move(converted));
+    }
+
+    std::vector<char*> argv_utf8;
+    argv_utf8.reserve(utf8_arguments.size());
+    for (std::string& argument : utf8_arguments)
+        argv_utf8.push_back(argument.data());
+    return launcher_main(argc, argv_utf8.data());
+}
+#else
+int main(int argc, char** argv) {
+    return launcher_main(argc, argv);
+}
+#endif
