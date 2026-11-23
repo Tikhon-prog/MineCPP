@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -93,8 +94,8 @@ void print_import_summary(const ImportSummary& summary) {
               << "Extracted files: " << summary.file_count << "\n"
               << "Uncompressed data: " << summary.uncompressed_bytes << " bytes\n"
               << "Version JSON copied: " << (summary.copied_version_metadata ? "yes" : "no") << "\n"
-              << "Stored at: " << summary.version_directory.string() << "\n"
-              << "Integrity manifest: " << (summary.version_directory / "manifest.mcpp").string() << "\n";
+              << "Stored at: " << path_to_utf8(summary.version_directory) << "\n"
+              << "Integrity manifest: " << path_to_utf8(summary.version_directory / "manifest.mcpp") << "\n";
 }
 
 int command_import(int argc, char** argv) {
