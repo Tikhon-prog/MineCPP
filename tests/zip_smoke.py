@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Small integration test: make a local ZIP/JAR and exercise inspect/extract."""
 import pathlib
+import shutil
 import subprocess
 import sys
 import zipfile
