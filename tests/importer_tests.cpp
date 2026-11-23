@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <system_error>
 #include <string>
 #include <vector>
 
@@ -260,6 +261,19 @@ int main() {
             CHECK(verify_import("1.20.4", data_directory).ok);
             CHECK(restored.version_id == "1.20.4");
         }
+
+        const fs::path manifest_path = replaced.version_directory / "manifest.mcpp";
+        const fs::path manifest_copy = temporary / "manifest-copy.mcpp";
+        fs::copy_file(manifest_path, manifest_copy);
+        fs::remove(manifest_path);
+        std::error_code manifest_link_error;
+        fs::create_symlink(manifest_copy, manifest_path, manifest_link_error);
+        if (!manifest_link_error) {
+            CHECK(!verify_import("1.20.4", data_directory).ok);
+            fs::remove(manifest_path);
+        }
+        fs::copy_file(manifest_copy, manifest_path);
+        CHECK(verify_import("1.20.4", data_directory).ok);
 
         const fs::path malicious_jar = temporary / "malicious.jar";
         write_zip(malicious_jar, {
