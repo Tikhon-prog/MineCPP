@@ -192,7 +192,7 @@ std::string join_classpath(const std::vector<fs::path>& paths) {
 }
 
 std::string quote_display(const std::string& text) {
-    if (text.find_first_of(" \t\n\"") == std::string::npos) return text;
+    if (!text.empty() && text.find_first_of(" \t\n\"") == std::string::npos) return text;
     std::string result = "\"";
     for (char c : text) {
         if (c == '\"') result += "\\\"";
