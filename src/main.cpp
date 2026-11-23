@@ -159,6 +159,8 @@ int launcher_main(int argc, char** argv) {
 
 #ifdef _WIN32
 int wmain(int argc, wchar_t** wide_argv) {
+    SetConsoleOutputCP(CP_UTF8);
+    SetConsoleCP(CP_UTF8);
     std::vector<std::string> utf8_arguments;
     utf8_arguments.reserve(static_cast<std::size_t>(argc));
     for (int index = 0; index < argc; ++index) {
