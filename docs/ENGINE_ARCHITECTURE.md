@@ -32,13 +32,13 @@ The snapshot/revision approach avoids worker threads reading mutable chunk array
 
 ## Mesh generation
 
-Each solid block contributes only faces whose adjacent block is air. Each visible quad is expanded into two triangles. Per-face vertex colours provide basic directional shading. The current renderer intentionally uses the compatibility OpenGL pipeline to keep the first cross-platform prototype small; a shader/VBO renderer is a later performance milestone.
+Each solid block contributes only faces whose adjacent block is air. Each visible quad is expanded into two triangles. Per-face vertex colours provide basic directional shading. The current renderer uses the OpenGL 2.1 compatibility pipeline with client-side vertex arrays and one batched draw per chunk. This reduces per-vertex API calls without requiring an extra OpenGL function loader; GPU VBOs and shaders remain a later performance milestone.
 
 ## Current limitations
 
 - No greedy meshing yet; adjacent coplanar faces are not merged.
 - Chunks are rebuilt when neighbouring chunks arrive or a block is edited.
 - No water/transparent render queue, chunk lighting, caves, fluids, or biome data.
-- Rendering uses CPU-side vertex iteration instead of GPU vertex buffers.
+- Mesh data is kept in CPU memory and submitted through OpenGL client arrays; persistent GPU vertex buffers are not implemented yet.
 - There is no network protocol or account/session implementation.
 - This is not an implementation of Minecraft's proprietary formats or assets.
