@@ -47,12 +47,21 @@ fs::path path_from_utf8(const std::string& value) {
 }
 
 std::string read_file(const fs::path& path) {
+    std::error_code size_error;
+    const std::uint64_t size = fs::file_size(path, size_error);
+    if (size_error) throw std::runtime_error("Cannot inspect file: " + path.string());
+    if (size > 32ULL * 1024ULL * 1024ULL)
+        throw std::runtime_error("Refusing to read a file larger than 32 MiB: " + path.string());
+
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open file: " + path.string());
     std::ostringstream buffer;
     buffer << in.rdbuf();
     if (!in.good() && !in.eof()) throw std::runtime_error("Cannot read file: " + path.string());
-    return buffer.str();
+    const std::string content = buffer.str();
+    if (content.size() > 32ULL * 1024ULL * 1024ULL)
+        throw std::runtime_error("File grew beyond the 32 MiB read limit: " + path.string());
+    return content;
 }
 
 void write_file(const fs::path& path, const std::string& content) {
@@ -64,10 +73,27 @@ void write_file(const fs::path& path, const std::string& content) {
 }
 
 bool valid_id(const std::string& id) {
-    return !id.empty() && id != "." && id != ".." &&
-        std::all_of(id.begin(), id.end(), [](unsigned char c) {
-            return std::isalnum(c) || c == '.' || c == '_' || c == '-';
-        });
+    if (id.empty() || id.size() > 64U) return false;
+    const auto first = static_cast<unsigned char>(id.front());
+    if (!((first >= 'a' && first <= 'z') || (first >= 'A' && first <= 'Z') ||
+          (first >= '0' && first <= '9'))) return false;
+
+    std::string device;
+    for (const unsigned char c : id) {
+        const bool valid = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '+' || c == '-';
+        if (!valid) return false;
+    }
+    const std::size_t dot = id.find('.');
+    device.reserve(dot == std::string::npos ? id.size() : dot);
+    for (const unsigned char c : id.substr(0, dot)) {
+        device.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c));
+    }
+    const bool numbered_device = device.size() == 4U &&
+        (device.rfind("com", 0) == 0 || device.rfind("lpt", 0) == 0) &&
+        device[3] >= '1' && device[3] <= '9';
+    return device != "con" && device != "prn" && device != "aux" &&
+           device != "nul" && !numbered_device;
 }
 
 std::string current_os() {
