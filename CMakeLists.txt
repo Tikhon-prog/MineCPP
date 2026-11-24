@@ -70,6 +70,10 @@ if(MINECPP_BUILD_TESTS)
     add_test(NAME minecpp_import_tests COMMAND minecpp_import_tests)
     add_test(NAME minecpp_launcher_help COMMAND minecpp-launcher --help)
 
+    add_executable(minecpp_packed_storage_tests tests/packed_storage_tests.cpp)
+    target_include_directories(minecpp_packed_storage_tests PRIVATE src)
+    add_test(NAME minecpp_packed_storage_tests COMMAND minecpp_packed_storage_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)

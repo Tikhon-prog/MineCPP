@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `PackedStorage`: Minecraft-style palette index storage (padded 64-bit words, 1-32 bits per entry) with tests. First module ported with Horizon (MIT) as reference.
+
 ## 0.1.0 — Native voxel prototype
 
 - Start the project as a native C++20 voxel sandbox instead of a Java launcher.
