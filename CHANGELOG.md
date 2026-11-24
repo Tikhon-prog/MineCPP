@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add `PackedStorage`: Minecraft-style palette index storage (padded 64-bit words, 1-32 bits per entry) with tests. First module ported with Horizon (MIT) as reference.
+- Add `PalettedContainer`: palette + packed indices that grow with the palette, uniform containers without storage, and validated save/load.
 
 ## 0.1.0 — Native voxel prototype
 

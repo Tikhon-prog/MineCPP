@@ -74,6 +74,10 @@ if(MINECPP_BUILD_TESTS)
     target_include_directories(minecpp_packed_storage_tests PRIVATE src)
     add_test(NAME minecpp_packed_storage_tests COMMAND minecpp_packed_storage_tests)
 
+    add_executable(minecpp_paletted_container_tests tests/paletted_container_tests.cpp)
+    target_include_directories(minecpp_paletted_container_tests PRIVATE src)
+    add_test(NAME minecpp_paletted_container_tests COMMAND minecpp_paletted_container_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)
