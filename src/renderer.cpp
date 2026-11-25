@@ -14,6 +14,7 @@
 #include <GLFW/glfw3.h>
 
 #include "renderer.hpp"
+#include "raycast.hpp"
 
 #include "math.hpp"
 
@@ -30,8 +31,6 @@
 
 namespace minecpp {
 namespace {
-constexpr float kPlayerHeight = 1.8F;
-constexpr float kPlayerRadius = 0.30F;
 constexpr float kMouseSensitivity = 0.11F;
 constexpr float kPi = 3.14159265358979323846F;
 
@@ -40,19 +39,6 @@ constexpr std::array<Block, 6> kHotbar{
 };
 
 float radians(float degrees) { return degrees * (kPi / 180.0F); }
-
-bool inside_player_aabb(const Vec3& feet, BlockPos block) {
-    const float min_x = feet.x - kPlayerRadius;
-    const float max_x = feet.x + kPlayerRadius;
-    const float min_y = feet.y;
-    const float max_y = feet.y + kPlayerHeight;
-    const float min_z = feet.z - kPlayerRadius;
-    const float max_z = feet.z + kPlayerRadius;
-    return static_cast<float>(block.x + 1) > min_x && static_cast<float>(block.x) < max_x &&
-           static_cast<float>(block.y + 1) > min_y && static_cast<float>(block.y) < max_y &&
-           static_cast<float>(block.z + 1) > min_z && static_cast<float>(block.z) < max_z;
-}
-}
 
 Game::Game(std::filesystem::path world_path, std::uint32_t seed,
            bool seed_explicit, int render_distance)
@@ -120,15 +106,21 @@ int Game::run() {
         static_cast<float>(spawn_z) + 0.5F
     };
 
+    constexpr double fixed_step = 1.0 / 60.0;
     double previous_time = glfwGetTime();
+    double accumulator = 0.0;
     last_save_ = previous_time;
     while (!glfwWindowShouldClose(window_)) {
         const double now = glfwGetTime();
-        const float delta_time = static_cast<float>(std::clamp(now - previous_time, 0.0, 0.05));
+        const double frame_time = std::clamp(now - previous_time, 0.0, 0.10);
         previous_time = now;
+        accumulator += frame_time;
 
         glfwPollEvents();
-        update(delta_time);
+        while (accumulator >= fixed_step) {
+            update(static_cast<float>(fixed_step));
+            accumulator -= fixed_step;
+        }
         render();
         update_window_title(now);
         glfwSwapBuffers(window_);
@@ -172,25 +164,6 @@ Vec3 Game::look_direction() const {
     return normalized({horizontal * std::cos(yaw), std::sin(pitch), horizontal * std::sin(yaw)});
 }
 
-bool Game::collides(const Vec3& feet) const {
-    const int min_x = floor_to_int(feet.x - kPlayerRadius);
-    const int max_x = floor_to_int(feet.x + kPlayerRadius);
-    const int min_y = floor_to_int(feet.y + 0.001F);
-    const int max_y = floor_to_int(feet.y + kPlayerHeight - 0.001F);
-    const int min_z = floor_to_int(feet.z - kPlayerRadius);
-    const int max_z = floor_to_int(feet.z + kPlayerRadius);
-
-    for (int y = min_y; y <= max_y; ++y) {
-        for (int z = min_z; z <= max_z; ++z) {
-            for (int x = min_x; x <= max_x; ++x) {
-                if (!world_.is_chunk_loaded(x, z)) return true;
-                if (is_solid(world_.get_block(x, y, z))) return true;
-            }
-        }
-    }
-    return false;
-}
-
 void Game::update_player(float delta_time) {
     const float yaw = radians(player_.yaw);
     const Vec3 forward{std::cos(yaw), 0.0F, std::sin(yaw)};
@@ -200,64 +173,48 @@ void Game::update_player(float delta_time) {
     if (glfwGetKey(window_, GLFW_KEY_S) == GLFW_PRESS) movement += forward * -1.0F;
     if (glfwGetKey(window_, GLFW_KEY_D) == GLFW_PRESS) movement += right;
     if (glfwGetKey(window_, GLFW_KEY_A) == GLFW_PRESS) movement += right * -1.0F;
-    movement = normalized(movement);
-    const float speed = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS ? 8.5F : 5.4F;
 
-    Vec3 candidate = player_.position;
-    candidate.x += movement.x * speed * delta_time;
-    if (!collides(candidate)) player_.position.x = candidate.x;
-    candidate = player_.position;
-    candidate.z += movement.z * speed * delta_time;
-    if (!collides(candidate)) player_.position.z = candidate.z;
+    const bool jump_down = glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS;
+    PhysicsInput input;
+    input.movement = movement;
+    input.jump_pressed = jump_down && !previous_jump_;
+    input.sprint = glfwGetKey(window_, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS;
+    previous_jump_ = jump_down;
 
-    const bool wants_jump = glfwGetKey(window_, GLFW_KEY_SPACE) == GLFW_PRESS;
-    if (wants_jump && player_.grounded) {
-        player_.vertical_velocity = 8.0F;
-        player_.grounded = false;
-    }
-    player_.vertical_velocity -= 22.0F * delta_time;
-    candidate = player_.position;
-    candidate.y += player_.vertical_velocity * delta_time;
-    if (!collides(candidate)) {
-        player_.position.y = candidate.y;
-        player_.grounded = false;
-    } else {
-        if (player_.vertical_velocity < 0.0F)
-            player_.position.y = std::floor(candidate.y) + 1.0F;
-        else
-            player_.position.y = std::floor(candidate.y + kPlayerHeight) - kPlayerHeight;
-        player_.vertical_velocity = 0.0F;
-        player_.grounded = true;
-    }
+    PhysicsBody body{player_.position, player_.velocity, player_.grounded};
+    const SolidBlockQuery collision = [this](int x, int y, int z) {
+        if (!world_.is_chunk_loaded(x, z)) return true;
+        return is_solid(world_.get_block(x, y, z));
+    };
+    (void)Physics::step(body, input, delta_time, collision);
+    player_.position = body.position;
+    player_.velocity = body.velocity;
+    player_.grounded = body.grounded;
+
     if (player_.position.y < -8.0F) {
         const int x = floor_to_int(player_.position.x);
         const int z = floor_to_int(player_.position.z);
         player_.position.y = static_cast<float>(World::terrain_height(world_.seed(), x, z)) + 2.0F;
-        player_.vertical_velocity = 0.0F;
+        player_.velocity = {};
+        player_.grounded = false;
     }
 }
 
 bool Game::raycast(BlockPos& hit, BlockPos& previous) const {
     const Vec3 origin = player_.position + Vec3{0.0F, 1.62F, 0.0F};
-    const Vec3 direction = look_direction();
-    BlockPos last{floor_to_int(origin.x), floor_to_int(origin.y), floor_to_int(origin.z)};
-    for (float distance = 0.05F; distance <= 6.0F; distance += 0.05F) {
-        const Vec3 point = origin + direction * distance;
-        const BlockPos cell{floor_to_int(point.x), floor_to_int(point.y), floor_to_int(point.z)};
-        if (cell == last) continue;
-        const Block block = world_.get_block(cell.x, cell.y, cell.z);
-        if (block != Block::Air) {
-            hit = cell;
-            previous = last;
-            return true;
-        }
-        last = cell;
-    }
-    return false;
+    RaycastResult result;
+    const bool found = voxel_raycast(
+        origin, look_direction(), 6.0F,
+        [this](int x, int y, int z) { return world_.get_block(x, y, z); },
+        result);
+    if (!found) return false;
+    hit = result.hit;
+    previous = result.previous;
+    return true;
 }
 
 bool Game::block_overlaps_player(BlockPos position) const {
-    return inside_player_aabb(player_.position, position);
+    return Physics::overlaps_block(player_.position, position.x, position.y, position.z);
 }
 
 void Game::handle_block_clicks() {
@@ -429,7 +386,7 @@ void Game::update_window_title(double now) {
     if (now - last_title_update_ < 0.2) return;
     last_title_update_ = now;
     std::ostringstream title;
-    title << "MineCPP 0.1.0 | XYZ " << std::fixed << std::setprecision(1)
+    title << "MineCPP " MINECPP_VERSION " | XYZ " << std::fixed << std::setprecision(1)
           << player_.position.x << " " << player_.position.y << " " << player_.position.z
           << " | " << block_name(kHotbar[static_cast<std::size_t>(selected_block_)])
           << " | Chunks " << world_.loaded_chunk_count()

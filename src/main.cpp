@@ -1,5 +1,10 @@
 #include "renderer.hpp"
 
+#ifndef MINECPP_VERSION
+#define MINECPP_VERSION "1.0.0"
+#endif
+
+#include <charconv>
 #include <cstdint>
 #include <cstdlib>
 #include <exception>
@@ -17,12 +22,13 @@ struct Options {
 
 void print_help() {
     std::cout <<
-        "MineCPP 0.1.0 — native C++ voxel sandbox\n\n"
+        "MineCPP " MINECPP_VERSION " — native C++ voxel client\n\n"
         "Usage: minecpp [options]\n\n"
         "Options:\n"
         "  --world PATH             World save file (default: worlds/Default.mcw)\n"
         "  --seed NUMBER            World seed for a new world\n"
         "  --render-distance N      Chunk radius, 2..8 (default: 4)\n"
+        "  --version                Show the MineCPP version\n"
         "  -h, --help               Show this help\n\n"
         "Controls:\n"
         "  W A S D                  Move\n"
@@ -44,17 +50,29 @@ Options parse_options(int argc, char** argv) {
             if (i + 1 >= argc) throw std::runtime_error("Missing value after " + arg);
             return argv[++i];
         };
-        if (arg == "--world") result.world_path = value();
+        if (arg == "--version") {
+            std::cout << "MineCPP " MINECPP_VERSION << '\n';
+            std::exit(0);
+        } else if (arg == "--world") result.world_path = value();
         else if (arg == "--seed") {
             const std::string text = value();
-            const auto parsed = std::stoull(text);
-            if (parsed > 0xffffffffULL) throw std::runtime_error("Seed must fit in an unsigned 32-bit integer");
+            std::uint64_t parsed = 0;
+            const auto conversion = std::from_chars(
+                text.data(), text.data() + text.size(), parsed);
+            if (conversion.ec != std::errc{} || conversion.ptr != text.data() + text.size() ||
+                parsed > 0xffffffffULL)
+                throw std::runtime_error("Seed must be an unsigned 32-bit integer");
             result.seed = static_cast<std::uint32_t>(parsed);
             result.seed_explicit = true;
         } else if (arg == "--render-distance") {
-            result.render_distance = std::stoi(value());
-            if (result.render_distance < 2 || result.render_distance > 8)
-                throw std::runtime_error("Render distance must be between 2 and 8 chunks");
+            const std::string text = value();
+            int parsed = 0;
+            const auto conversion = std::from_chars(
+                text.data(), text.data() + text.size(), parsed);
+            if (conversion.ec != std::errc{} || conversion.ptr != text.data() + text.size() ||
+                parsed < 2 || parsed > 8)
+                throw std::runtime_error("Render distance must be an integer between 2 and 8 chunks");
+            result.render_distance = parsed;
         } else if (arg == "-h" || arg == "--help") {
             print_help();
             std::exit(0);

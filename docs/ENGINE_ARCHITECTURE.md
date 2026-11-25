@@ -1,85 +1,114 @@
-# MineCPP architecture
+# MineCPP 1.0.0 architecture
 
-MineCPP currently has two independent executables:
+MineCPP contains a local-only preparation toolchain, a binary-format library and a separate native voxel sandbox. The native sandbox does not yet execute the imported Minecraft client or load a vanilla world into its renderer.
 
-- minecpp-launcher: an offline C++ command-line importer and integrity checker.
-- minecpp: an experimental voxel sandbox used to develop native rendering and world-simulation foundations. It is not yet compatible with Minecraft Java Edition.
+## Components
 
-## Offline launcher pipeline
+- minecpp-launcher: import, list, verify, inspect, prepare and verify-prepared commands.
+- minecpp_metadata: strict JSON parser and Minecraft version / asset-index metadata.
+- minecpp_resources: SHA-1 validation, offline preparation, staging and resource manifest verification.
+- minecpp_formats: NBT, compressed NBT, Anvil region and modern block-state palette readers.
+- minecpp_world: deterministic custom terrain, chunk state, worker pool, world persistence and mesh scheduling.
+- minecpp: GLFW/OpenGL native voxel sandbox with player physics and block interaction.
+
+## Offline import flow
 
 ~~~text
-Existing Minecraft installation
-  └─ versions/<id>/
-       ├─ <id>.jar
-       └─ <id>.json (optional at import time)
-              |
-              v
+User-owned Minecraft installation
+  └── versions/<id>/
+        ├── <id>.jar
+        └── <id>.json (when available)
+                |
+                v
 minecpp-launcher import
-  ├─ inspect ZIP central directory
-  ├─ validate paths, flags, sizes and compression methods
-  ├─ extract files to a staging directory
-  ├─ decompress DEFLATE entries with zlib
-  ├─ verify CRC-32 for every extracted file
-  ├─ copy adjacent version JSON when present
-  └─ write manifest.mcpp and atomically publish the import
-              |
-              v
+  ├── parse the ZIP central directory
+  ├── reject unsafe flags, methods, paths and entry sizes
+  ├── extract to a staging directory
+  ├── decompress Store / DEFLATE entries
+  ├── verify CRC-32
+  ├── copy adjacent version JSON
+  └── publish the import and manifest
+                |
+                v
 minecpp-data/versions/<id>/
-  ├─ client/
-  ├─ metadata/version.json
-  └─ manifest.mcpp
-              |
-              +── list
-              +── verify
+  ├── client/
+  ├── metadata/version.json
+  └── manifest.mcpp
 ~~~
 
-The import command performs no network calls. The original JAR and the original Minecraft installation are read-only inputs. Extracted files are first written to a staging directory; only after extraction and manifest creation succeed is that directory moved into the selected version location.
+The original installation is an input only. --force replaces an imported version only after the staging extraction has completed. ZIP64 and multi-disk archives are not supported. CRC-32 detects accidental damage; it is not a cryptographic signature.
 
-The ZIP reader uses the central directory for authoritative compressed sizes and offsets. It currently supports standard ZIP Store and DEFLATE entries, rejects ZIP64 and multi-disk archives, rejects encrypted entries and symlinks, checks CRC-32, and enforces archive/entry/expanded-size limits. Archive paths are normalized and validated before filesystem writes. Absolute paths, drive-qualified names, empty path components, dot components, and parent traversal are rejected. Duplicate paths are rejected, including case-only collisions for portability to Windows.
+## Metadata and offline resource flow
 
-Each manifest records the version ID, source filename, extracted file count, total uncompressed bytes, and the size and CRC-32 of every extracted file. The verify command recomputes these values from disk. CRC-32 detects accidental corruption; it is not a cryptographic authenticity signature.
+~~~text
+minecpp-launcher inspect <id>
+  ├── strict JSON parsing
+  ├── version ID / main class / Java major version
+  ├── asset index metadata
+  ├── direct library artifacts
+  ├── logging configuration
+  └── unresolved inheritance / library requirements report
 
-When a matching <id>.json file is next to the source JAR, it is copied to metadata/version.json and included in the manifest. The first release does not yet parse the JSON or resolve libraries and assets. Those are explicit next milestones, not assumed to be included in a JAR.
+minecpp-launcher prepare <id> --game-dir <existing-install>
+  ├── read local assets/indexes/<id>.json
+  ├── verify index size / SHA-1 when declared
+  ├── resolve direct libraries already on disk
+  ├── resolve assets/objects/<hash-prefix>/<hash>
+  ├── create legacy virtual / resources mappings when requested
+  ├── copy optional logging configuration
+  ├── write a checksummed manifest
+  └── publish a separate prepared/<id> directory
+          |
+          v
+minecpp-launcher verify-prepared <id>
+  └── verify every manifest-listed file and checksum
+~~~
 
-## Native voxel prototype: frame and thread ownership
+URLs in version JSON are parsed as metadata, never fetched. No network downloader exists in this pipeline. Preparation refuses to publish a new output when required files are absent or metadata asks for features the resolver does not yet understand, including inherited versions, OS library rules and native classifiers.
 
-The main thread owns the GLFW window, OpenGL context, player state, loaded-chunk map, and input. Worker threads never call OpenGL and never mutate the live chunk map.
+The preparation manifest records the version, copied metadata and index fingerprints, direct library artifacts, content-addressed asset objects, legacy mapping flags and optional logging configuration. Verification walks the manifest and checks file existence, sizes and SHA-1 values.
+
+## NBT and Anvil
+
+minecpp_formats reads big-endian NBT tags with configurable caps for input size, nesting, tag count and array lengths. The decompressor accepts gzip/zlib streams and enforces a maximum expanded size.
+
+The region reader validates the 8 KiB location/timestamp header, sector allocation bounds and overlap, then reads a chunk's length-prefixed payload. Compression types gzip, zlib and uncompressed are supported. LZ4 and external .mcc chunks are rejected explicitly.
+
+The Anvil chunk decoder accepts the 1.16+ padded block-state palette representation and the modern lowercase sections/block_states shape as well as the earlier Level/Sections/Palette/BlockStates field names. It preserves unknown namespaced block identifiers and their string properties. Only a small explicit set of common states is mapped to the sandbox's simplified Block enum. It does not yet migrate all vanilla blocks or connect these decoded chunks to the graphical world renderer.
+
+## Native world and frame ownership
+
+The main thread owns GLFW, OpenGL, player input and the live chunk map. Workers generate immutable chunk snapshots and meshes, then return results through a mutex-protected queue. Revision numbers discard stale mesh results.
 
 ~~~text
 Main thread
-  ├─ read input and move player
-  ├─ request nearby chunk coordinates
-  ├─ drain completed worker results
-  ├─ take immutable chunk snapshots for meshing
-  ├─ issue OpenGL draw calls
-  └─ save player edits
+  ├── poll input
+  ├── run player simulation at a fixed 60 Hz
+  ├── update chunk streaming
+  ├── apply completed worker results
+  ├── issue OpenGL draws
+  └── save MineCPP world edits
 
-Worker pool (2..8 threads)
-  ├─ generate seeded block arrays for requested chunks
-  └─ build triangle meshes from immutable snapshots
-       └─ post results back to the main thread
+Worker pool
+  ├── generate deterministic terrain arrays
+  └── build greedy meshes from immutable snapshots
 ~~~
 
-The snapshot/revision approach avoids worker threads reading mutable chunk arrays. If a neighbouring chunk loads or a block changes while a mesh is being built, the chunk revision changes; stale mesh results are discarded.
+The player physics solver is independent of GLFW. It uses feet position, velocity, grounded state, acceleration, friction, gravity, sprint and jump-edge input. Axis-separated AABB collisions use bounded movement substeps and binary refinement. Unloaded chunks are treated as solid by the renderer adapter to prevent moving into terrain that has not arrived yet.
 
-## World coordinates
+Ray selection uses Amanatides-Woo voxel traversal. It returns the first solid cell and previous empty cell, so placement does not depend on coarse fixed-distance sampling.
 
-- Horizontal chunk dimensions: 16×16 blocks.
-- Vertical world dimension: 96 blocks.
-- Chunks are keyed by signed integer X/Z coordinates.
-- Floor division and positive modulo are used for negative world coordinates.
-- Terrain is a deterministic function of the world seed and absolute X/Z coordinates.
-- The save file stores only player block edits plus the world seed. Generated terrain is recreated on demand.
+Greedy meshing merges adjacent coplanar faces with the same block material into rectangles. Rendering still uses the OpenGL 2.1 compatibility pipeline and flat vertex colours; there is no Minecraft model/texture pipeline or modern shader renderer yet.
 
-## Mesh generation
+## Save format and safety
 
-Each solid block contributes only faces whose adjacent block is air. Each visible quad is expanded into two triangles. Per-face vertex colours provide basic directional shading. The current renderer uses the OpenGL 2.1 compatibility pipeline with client-side vertex arrays and one batched draw per chunk. This reduces per-vertex API calls without requiring an extra OpenGL function loader; GPU VBOs and shaders remain a later performance milestone.
+MineCPP's .mcw save stores a MineCPP seed and sparse block edits, not vanilla Anvil chunks. Reads validate the whole file before applying edits. Writes use a temporary file and backup/restore publication path so a failed replacement can preserve the previous save.
 
-## Current boundaries
+## Explicit 1.0.0 boundaries
 
-- The importer is not a complete Minecraft installation manager: libraries and the assets index/object store are not resolved yet.
-- The importer does not launch Java, authenticate accounts, download files, or communicate with servers.
-- The native voxel prototype is not a reimplementation of Minecraft and does not claim world or server compatibility.
-- No Minecraft proprietary code, textures, sounds, fonts, or other assets are included.
-- The native prototype has no greedy meshing, water/transparent render queue, chunk lighting, caves, fluids, or biome data.
-- Mesh data is kept in CPU memory and submitted through OpenGL client arrays; persistent GPU vertex buffers are not implemented yet.
+- No Minecraft Java launcher or Java bytecode execution.
+- No account login, download manager or network protocol.
+- No complete Mojang library-rule / native-classifier / inheritance resolver.
+- No LZ4 or external .mcc support; no pre-1.16 continuous block-state packing.
+- No full vanilla block registry, blockstate/model JSON, textures, lighting, biomes, fluids, entities, inventory, sound or multiplayer.
+- The graphical voxel sandbox creates its own procedural worlds; the Anvil reader is a data-format foundation, not a vanilla-world renderer.

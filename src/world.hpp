@@ -4,6 +4,7 @@
 #include "thread_pool.hpp"
 
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <mutex>
 #include <queue>
@@ -43,8 +44,8 @@ public:
         ChunkPos position, std::uint32_t seed, const std::vector<BlockEdit>& edits = {});
 
 private:
-    struct GeneratedChunk { ChunkPos position; std::vector<Block> blocks; };
-    struct GeneratedMesh { ChunkPos position; std::uint64_t revision; std::vector<MeshVertex> vertices; };
+    struct GeneratedChunk { ChunkPos position; std::vector<Block> blocks; std::exception_ptr error; };
+    struct GeneratedMesh { ChunkPos position; std::uint64_t revision; std::vector<MeshVertex> vertices; std::exception_ptr error; };
 
     void request_chunk(ChunkPos position);
     void schedule_mesh(ChunkPos position);

@@ -1,4 +1,4 @@
-name: Native build
+name: MineCPP 1.0.0 — build and tests
 
 on:
   push:
@@ -37,24 +37,30 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
-      - name: Upload Linux launcher
+      - name: Upload Linux binaries
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-Linux-${{ runner.arch }}
-          path: build/minecpp-launcher
+          name: MineCPP-1.0.0-Linux-${{ runner.arch }}
+          path: |
+            build/minecpp-launcher
+            build/minecpp
           if-no-files-found: error
-      - name: Upload macOS launcher
+      - name: Upload macOS binaries
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-macOS-${{ runner.arch }}
-          path: build/minecpp-launcher
+          name: MineCPP-1.0.0-macOS-${{ runner.arch }}
+          path: |
+            build/minecpp-launcher
+            build/minecpp
           if-no-files-found: error
-      - name: Upload Windows launcher
+      - name: Upload Windows binaries
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: MineCPP-Launcher-Windows-${{ runner.arch }}
-          path: build/Release/minecpp-launcher.exe
+          name: MineCPP-1.0.0-Windows-${{ runner.arch }}
+          path: |
+            build/Release/minecpp-launcher.exe
+            build/Release/minecpp.exe
           if-no-files-found: error

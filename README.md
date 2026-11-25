@@ -1,28 +1,27 @@
 # MineCPP
 
-**MineCPP 0.1.0 — an offline-first C++20 Minecraft preparation tool and native voxel prototype.**
+**MineCPP 1.0.0** is an independent C++20 project with two local-only parts:
 
-MineCPP is an independent C++ project. Its first launcher milestone imports an existing Minecraft Java client JAR from disk, safely extracts its ZIP entries, preserves nearby version metadata, and writes a local integrity manifest. It never downloads Minecraft or contacts an account service.
+- an offline importer and resource-preparation utility for files from a Minecraft installation the user already has;
+- a native OpenGL voxel sandbox used as the foundation for a future C++ game client.
 
-The repository also contains an experimental native voxel sandbox (the minecpp executable). That sandbox is not yet compatible with Minecraft Java Edition. The long-term goal is a native C++ client that can use resources prepared from a player's own local Minecraft installation.
+MineCPP does not download Minecraft, bundle Mojang assets or libraries, authenticate accounts, or execute the supplied Java client. The native sandbox is its own game prototype and is **not yet Minecraft Java Edition-compatible**.
 
-## Launcher 0.1.0
+## What 1.0.0 includes
 
-The first release provides a command-line launcher/importer:
+### Offline import and inspection
 
-- Import an existing client.jar without internet access.
-- Detect the version ID from the JAR filename or its containing version folder, or specify it explicitly.
-- Extract stored and DEFLATE-compressed ZIP entries.
-- Reject absolute paths, parent-directory traversal, duplicate/case-colliding paths, symbolic links and special Unix file types, encrypted entries, unsupported compression, and unsafe archive sizes.
-- Verify each extracted file against its CRC-32 and recorded size; refuse symlinks and unsafe manifest paths.
-- Copy the matching version JSON when it sits next to the JAR.
-- Keep the original JAR unchanged.
-- List imported versions and verify an import again later.
-- Replace an existing import only when --force is supplied.
+The minecpp-launcher utility can:
 
-### Import a local Minecraft version
+- import a locally supplied client JAR without moving or modifying the source;
+- extract ZIP Store and DEFLATE entries into a staged directory;
+- reject path traversal, absolute paths, symlinks, special ZIP entries, encrypted entries, unsupported compression, duplicate/case-colliding paths, and unsafe archive sizes;
+- copy an adjacent version JSON file when one is present;
+- create and verify an integrity manifest using file sizes and CRC-32;
+- list imported versions;
+- parse and inspect local version metadata, including the main class, declared Java version, asset index, direct library artifacts, logging configuration and unresolved library requirements.
 
-A normal Minecraft installation already has a structure like this:
+Example layout:
 
 ~~~text
 .minecraft/
@@ -30,87 +29,106 @@ A normal Minecraft installation already has a structure like this:
     └── 1.20.4/
         ├── 1.20.4.jar
         └── 1.20.4.json
-~~~
 
-Import the JAR:
-
-~~~bash
-./build/minecpp-launcher import ~/.minecraft/versions/1.20.4/1.20.4.jar
-~~~
-
-The version ID defaults to the JAR filename (for example, `1.20.4.jar`). For a generic `client.jar` or `minecraft.jar`, MineCPP uses the containing version folder name when it is valid. You can always override it with `--id`. MineCPP extracts the JAR under:
-
-~~~text
 minecpp-data/
 └── versions/
     └── 1.20.4/
-        ├── client/                 # extracted JAR entries
+        ├── client/
         ├── metadata/
-        │   └── version.json        # copied when present beside the JAR
-        └── manifest.mcpp           # file sizes and CRC-32 checksums
+        │   └── version.json
+        └── manifest.mcpp
 ~~~
 
-The original JAR is not moved, modified, or deleted. The default output folder is minecpp-data in the current working directory.
-
-Other commands:
+Import and inspect:
 
 ~~~bash
-# Choose the ID and destination explicitly
-./build/minecpp-launcher import /path/to/client.jar --id 1.20.4 --data-dir ./game-data
-
-# Show locally imported versions
+./build/minecpp-launcher import ~/.minecraft/versions/1.20.4/1.20.4.jar
 ./build/minecpp-launcher list
-
-# Check every imported file against the manifest
 ./build/minecpp-launcher verify 1.20.4
-
-# Replace an existing imported version
-./build/minecpp-launcher import /path/to/client.jar --id 1.20.4 --force
-
-# Show commands
-./build/minecpp-launcher --help
+./build/minecpp-launcher inspect 1.20.4
 ~~~
 
---force builds a complete staging directory first and then replaces the previous import. A failed extraction does not replace the previous version. MineCPP refuses a destination that contains the source JAR, so `--force` cannot replace the original `.minecraft/versions/<id>` directory by mistake.
+The version ID is inferred from the JAR filename or its containing folder. Use --id to override it and --data-dir to select the output directory.
 
-For safety, the first importer limits each archive to 2 GiB, each individual compressed or expanded file to 128 MiB, total extracted data to 2 GiB, and the number of ZIP entries to 100,000. Version JSON metadata is limited to 16 MiB.
+### Offline resource preparation
 
-### Current boundaries
+The prepare command uses only files already present in an existing game directory. It reads the imported version JSON, the declared asset index, the local content-addressed asset objects, direct library artifacts and an optional client logging configuration. It verifies declared sizes and SHA-1 values, then prepares a separate output tree.
 
-This is the first preparation milestone, not a playable Minecraft launcher yet:
+~~~bash
+./build/minecpp-launcher prepare 1.20.4 --game-dir ~/.minecraft
+./build/minecpp-launcher verify-prepared 1.20.4
+~~~
 
-- It extracts the client JAR and copies an adjacent version JSON file.
-- It does not yet collect the libraries/ and assets/ directories referenced by Minecraft metadata.
-- It does not yet implement Mojang's resource exporters, the full native game engine, a graphical launcher, Microsoft authentication, or multiplayer.
-- It does not execute the extracted Java classes.
-- ZIP64 and multi-disk archives are not supported in this first importer.
+Prepared output is kept separate from the source installation:
 
-No Minecraft code, assets, libraries, or other proprietary game files are bundled in this repository. Supply files from a Minecraft installation you already have.
+~~~text
+minecpp-data/
+└── prepared/
+    └── 1.20.4/
+        ├── metadata/
+        │   └── version.json
+        ├── assets/
+        │   ├── indexes/
+        │   ├── objects/
+        │   ├── virtual/       # only when requested by the asset index
+        │   └── log_configs/   # when declared by version metadata
+        ├── libraries/
+        ├── resources/         # only when map_to_resources is requested
+        └── resources.mcpp
+~~~
+
+Preparation is staged and only published when its required local inputs are present. Replacing an existing prepared tree requires --force. Legacy asset mappings use hard links from the staged object copy where possible, with a copy fallback.
+
+**Important completeness boundary:** 1.0.0 does not resolve inherited version JSON, OS-specific library rules, Maven-only library entries, or native library classifiers. When metadata requires one of those unresolved cases, MineCPP reports preparation as incomplete instead of claiming the resource set is ready. It never silently substitutes network downloads.
+
+### NBT and Anvil file readers
+
+The format library includes:
+
+- bounded NBT parsing for all standard tag types;
+- gzip/zlib NBT decompression with an output limit;
+- Anvil .mca region header and sector validation;
+- reading region chunks stored with gzip, zlib or no compression;
+- decoding modern section palettes and block-state packed arrays, preserving namespaced block IDs and string properties;
+- explicit mapping of a small set of common vanilla block states to the sandbox's built-in block enum.
+
+LZ4 region compression, external .mcc chunk payloads, and pre-1.16 continuous palette packing are not supported in this release. The reader is a format foundation: the graphical sandbox still generates its own procedural worlds and does not yet load a vanilla save into its renderer.
+
+### Native voxel sandbox
+
+The separate minecpp executable currently provides:
+
+- a GLFW window and OpenGL 2.1 compatibility renderer;
+- first-person mouse-look and a six-slot block selector;
+- deterministic procedural terrain, 16×16 horizontal chunks and asynchronous chunk/mesh jobs;
+- block breaking and placement;
+- a standalone player-physics module with acceleration, friction, gravity, jumping, sprinting, axis-separated AABB collision and bounded movement substeps;
+- a fixed 60 Hz simulation step;
+- voxel DDA ray traversal for block selection;
+- greedy meshing of coplanar faces with the same block material;
+- local world saves with validated reads and staged/backup writes.
+
+World saves contain MineCPP's own terrain seed and player block edits. They are not Minecraft .mca worlds. Rendering currently uses flat block colours; Minecraft texture atlases, model JSON, lighting, fluids, biome generation, entities, inventory/crafting, sound, multiplayer and mod support are not part of 1.0.0.
 
 ## Build
 
-MineCPP uses C++20, CMake, GLFW, OpenGL, threads, and zlib. The importer and its tests are C++ code; zlib is used for standard ZIP DEFLATE decompression.
+Requirements: C++20 compiler, CMake 3.20+, zlib. The native windowed client additionally needs GLFW 3.3+ and OpenGL.
 
 ### Linux / Lubuntu
 
-To build only the offline launcher/importer (no OpenGL or GLFW required):
-
 ~~~bash
 sudo apt update
-sudo apt install build-essential cmake zlib1g-dev
+sudo apt install build-essential cmake zlib1g-dev libglfw3-dev libgl1-mesa-dev
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMINECPP_BUILD_VOXEL_PROTOTYPE=OFF
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-
-./build/minecpp-launcher --help
 ~~~
 
-To build both the launcher and the experimental voxel prototype, install the graphics dependencies and leave the CMake option enabled:
+To build the offline tools and file-format readers without the graphical client:
 
 ~~~bash
-sudo apt install libglfw3-dev libgl1-mesa-dev
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMINECPP_BUILD_VOXEL_PROTOTYPE=ON
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DMINECPP_BUILD_VOXEL_PROTOTYPE=OFF
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ~~~
@@ -124,8 +142,6 @@ vcpkg install glfw3:x64-windows-static zlib:x64-windows-static
 cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
-
-.\build\Release\minecpp-launcher.exe --help
 ~~~
 
 ### macOS
@@ -133,37 +149,32 @@ ctest --test-dir build -C Release --output-on-failure
 ~~~bash
 xcode-select --install
 brew install cmake glfw zlib
-
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
-
-./build/minecpp-launcher --help
 ~~~
 
-## Native voxel prototype
+## Tests and CI
 
-The separate minecpp executable is an early C++20 voxel sandbox used to develop engine fundamentals:
+CMake defines dedicated test targets for:
 
-- GLFW window and OpenGL renderer.
-- First-person camera, mouse look, WASD movement, sprinting, jumping, and player collision.
-- Deterministic seeded terrain with hills, grass, dirt, stone, sand, trees, and bedrock.
-- 16×16 horizontal chunks with world streaming around the player.
-- Background worker threads generate terrain and build chunk meshes; OpenGL work stays on the main thread.
-- Visible-face meshing, block breaking and placement, a six-slot block selector, and local world saves.
+- ZIP/JAR importing and import-manifest verification;
+- JSON and Minecraft version metadata validation;
+- SHA-1, asset-index parsing, offline preparation and prepared-resource verification;
+- NBT parsing, decompression and Anvil region reading;
+- modern block-state palette decoding;
+- deterministic world generation, persistence and greedy mesh output;
+- player physics and voxel DDA ray traversal;
+- CLI help, version and error-path smoke tests.
 
-It is a development prototype, not a claim of Minecraft compatibility. Textures, water, caves, lighting, crafting, inventory, mobs, audio, multiplayer, and mod support remain future work.
+GitHub Actions is configured to build and run CTest on Linux, Windows and macOS. The test targets are included in this release source, but a successful run must be established by the CI results for the commit; source registration alone is not a test pass.
 
-## Automated tests
+## Design rules
 
-CMake builds two test executables:
+- C++20 implementation; the Java JAR is an input archive, not the runtime.
+- No network activity for import, inspection, preparation or verification.
+- Never alter the user's original JAR or game directory.
+- Never report a resource set as complete when unsupported metadata requirements remain unresolved.
+- Do not claim Minecraft compatibility until real reference worlds, resource packs and gameplay behaviour pass a documented compatibility suite.
 
-- minecpp_tests: deterministic world generation, negative chunk coordinates, block edits, saves, and mesh generation.
-- minecpp_import_tests: stored and DEFLATE JAR entries, metadata copy, automatic version detection, source-folder protection, duplicate-import protection, CRC verification, hostile-manifest rejection, duplicate/case-colliding paths, Unix symlink rejection, Windows reserved names, and path-traversal rejection.
-- CLI smoke tests: help, version, empty version listing, and missing-version verification.
-
-GitHub Actions builds and runs tests on Linux, Windows, and macOS.
-
-## Roadmap
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the importer design and manifest format. See [docs/ROADMAP.md](docs/ROADMAP.md) for the planned launcher, resource-preparation, and native-client milestones.
+See the architecture guide at docs/ENGINE_ARCHITECTURE.md and the roadmap at docs/ROADMAP.md.

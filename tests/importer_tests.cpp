@@ -75,7 +75,6 @@ void write_zip(const fs::path& path, const std::vector<ZipEntry>& entries) {
         CentralEntry record;
         record.name = entry.name;
         record.method = entry.deflated ? 8U : 0U;
-        record.external_attributes = entry.unix_mode << 16U;
         record.uncompressed_size = static_cast<std::uint32_t>(entry.contents.size());
         record.external_attributes = entry.symlink ? 0xA1FF0000U : 0x81A40000U;
         record.crc = static_cast<std::uint32_t>(::crc32(
@@ -326,7 +325,7 @@ int main() {
 
         const fs::path symlink_entry_jar = temporary / "symlink-entry.jar";
         write_zip(symlink_entry_jar, {
-            {"link.txt", "outside-target", false, false, 0120777U},
+            {"link.txt", "outside-target", false, false, true},
             {"net/minecraft/client/main/Main.class", "class", false, false}
         });
         expect_throw([&] {
@@ -351,14 +350,14 @@ int main() {
             (void)import_jar(invalid_utf8_jar, data_directory, "1.20.10");
         });
 
-        const fs::path duplicate_jar = temporary / "case-collision.jar";
-        write_zip(duplicate_jar, {
+        const fs::path case_collision_jar = temporary / "case-collision.jar";
+        write_zip(case_collision_jar, {
             {"net/minecraft/client/main/Main.class", "class", false, false},
             {"Assets/thing.bin", "first", false, false},
             {"assets/THING.bin", "second", false, false}
         });
         expect_throw([&] {
-            (void)import_jar(duplicate_jar, data_directory, "1.20.8");
+            (void)import_jar(case_collision_jar, data_directory, "1.20.8");
         });
         CHECK(!fs::exists(data_directory / "versions" / "1.20.8"));
 

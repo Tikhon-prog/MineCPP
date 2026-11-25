@@ -1,6 +1,7 @@
 #pragma once
 
 #include "math.hpp"
+#include "physics.hpp"
 #include "world.hpp"
 
 #include <cstdint>
@@ -24,9 +25,9 @@ public:
 private:
     struct Player {
         Vec3 position;
+        Vec3 velocity;
         float yaw = -90.0F;
         float pitch = 0.0F;
-        float vertical_velocity = 0.0F;
         bool grounded = false;
     };
 
@@ -37,7 +38,6 @@ private:
     void handle_block_clicks();
     void render();
     void update_window_title(double now);
-    [[nodiscard]] bool collides(const Vec3& feet_position) const;
     [[nodiscard]] Vec3 look_direction() const;
     [[nodiscard]] bool raycast(BlockPos& hit, BlockPos& previous) const;
     [[nodiscard]] bool block_overlaps_player(BlockPos position) const;
@@ -56,6 +56,7 @@ private:
     bool previous_left_ = false;
     bool previous_right_ = false;
     bool previous_tab_ = false;
+    bool previous_jump_ = false;
     bool previous_keys_[6]{};
 };
 

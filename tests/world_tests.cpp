@@ -16,6 +16,13 @@ using namespace minecpp;
 
 #define CHECK(expression) do { if (!(expression)) throw std::runtime_error("Test failed: " #expression); } while (false)
 
+template<typename Function>
+void expect_throw(Function&& function) {
+    bool threw = false;
+    try { function(); } catch (const std::exception&) { threw = true; }
+    CHECK(threw);
+}
+
 int main() {
     CHECK(floor_div(0, 16) == 0);
     CHECK(floor_div(15, 16) == 0);
@@ -67,6 +74,13 @@ int main() {
     one.blocks[snapshot_index(4, 10, 4)] = Block::Stone;
     CHECK(build_chunk_mesh(one).size() == 36U);
 
+    ChunkSnapshot merged;
+    merged.position = {0, 0};
+    merged.blocks.assign(static_cast<std::size_t>(kWorldHeight * (kChunkSize + 2) * (kChunkSize + 2)), Block::Air);
+    merged.blocks[snapshot_index(4, 10, 4)] = Block::Stone;
+    merged.blocks[snapshot_index(5, 10, 4)] = Block::Stone;
+    CHECK(build_chunk_mesh(merged).size() == 36U);
+
     one.blocks[snapshot_index(5, 10, 4)] = Block::Dirt;
     CHECK(build_chunk_mesh(one).size() == 60U);
 
@@ -101,6 +115,29 @@ int main() {
         CHECK(ready);
         const int ground = World::terrain_height(restored.seed(), 1, 1);
         CHECK(restored.get_block(1, ground + 1, 1) == Block::Wood);
+        restored.save(save_path);
+        CHECK(std::filesystem::is_regular_file(save_path));
+
+        const auto corrupt_path = std::filesystem::path(save_path.string() + ".trailing");
+        std::filesystem::copy_file(save_path, corrupt_path,
+                                   std::filesystem::copy_options::overwrite_existing);
+        {
+            std::ofstream corrupt(corrupt_path, std::ios::binary | std::ios::app);
+            corrupt.put('!');
+        }
+        World untouched(777U, 2);
+        expect_throw([&] { untouched.load(corrupt_path); });
+        CHECK(untouched.seed() == 777U);
+        std::filesystem::remove(corrupt_path, remove_error);
+
+        const auto symlink_path = std::filesystem::path(save_path.string() + ".symlink");
+        std::error_code symlink_error;
+        std::filesystem::create_symlink(save_path, symlink_path, symlink_error);
+        if (!symlink_error) {
+            World symlink_reader(999U, 2);
+            expect_throw([&] { symlink_reader.load(symlink_path); });
+            std::filesystem::remove(symlink_path, remove_error);
+        }
     }
     std::filesystem::remove(save_path, remove_error);
 

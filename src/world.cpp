@@ -5,11 +5,15 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
+#include <tuple>
+#include <utility>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <limits>
 #include <stdexcept>
+#include <system_error>
 #include <thread>
 
 namespace minecpp {
@@ -160,7 +164,14 @@ std::vector<Block> World::generate_chunk_blocks(
 }
 
 void World::load(const std::filesystem::path& path, bool keep_command_line_seed) {
-    if (!std::filesystem::exists(path)) return;
+    std::error_code status_error;
+    const std::filesystem::file_status status =
+        std::filesystem::symlink_status(path, status_error);
+    if (status_error == std::errc::no_such_file_or_directory) return;
+    if (status_error) throw std::runtime_error("Cannot inspect world save: " + status_error.message());
+    if (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status))
+        throw std::runtime_error("World save must be a regular, non-symlink file");
+
     std::ifstream in(path, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot open world save: " + path.string());
     char magic[8]{};
@@ -171,8 +182,9 @@ void World::load(const std::filesystem::path& path, bool keep_command_line_seed)
     const std::uint32_t saved_seed = read_u32(in);
     const std::uint32_t count = read_u32(in);
     if (count > 10000000U) throw std::runtime_error("World save contains too many block edits");
-    if (!keep_command_line_seed) seed_ = saved_seed;
-    edits_.clear();
+
+    std::unordered_map<BlockPos, Block, BlockPosHash> loaded_edits;
+    loaded_edits.reserve(static_cast<std::size_t>(count));
     for (std::uint32_t i = 0; i < count; ++i) {
         const int x = static_cast<std::int32_t>(read_u32(in));
         const int y = static_cast<std::int32_t>(read_u32(in));
@@ -181,39 +193,90 @@ void World::load(const std::filesystem::path& path, bool keep_command_line_seed)
         in.read(&raw_block, 1);
         if (!in) throw std::runtime_error("World save ended while reading block edits");
         const auto id = static_cast<unsigned char>(raw_block);
-        if (y >= 0 && y < kWorldHeight && id <= static_cast<unsigned char>(Block::Bedrock))
-            edits_.insert_or_assign(BlockPos{x, y, z}, static_cast<Block>(id));
+        if (y < 0 || y >= kWorldHeight || id > static_cast<unsigned char>(Block::Bedrock))
+            throw std::runtime_error("World save contains an invalid block edit");
+        if (!loaded_edits.emplace(BlockPos{x, y, z}, static_cast<Block>(id)).second)
+            throw std::runtime_error("World save contains duplicate block edits");
     }
+    char trailing = 0;
+    if (in.read(&trailing, 1))
+        throw std::runtime_error("World save contains unexpected trailing data");
+    if (!in.eof()) throw std::runtime_error("Failed while checking world save length");
+
+    if (!keep_command_line_seed) seed_ = saved_seed;
+    edits_ = std::move(loaded_edits);
 }
 
 void World::save(const std::filesystem::path& path) const {
     const auto parent = path.parent_path();
     if (!parent.empty()) std::filesystem::create_directories(parent);
-    const std::filesystem::path temporary = path.string() + ".tmp";
-    {
-        std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
-        if (!out) throw std::runtime_error("Cannot create world save: " + temporary.string());
-        out.write("MCPPWLD1", 8);
-        write_u32(out, seed_);
-        if (edits_.size() > std::numeric_limits<std::uint32_t>::max())
-            throw std::runtime_error("Too many block edits to save");
-        write_u32(out, static_cast<std::uint32_t>(edits_.size()));
-        for (const auto& [position, block] : edits_) {
-            write_u32(out, static_cast<std::uint32_t>(position.x));
-            write_u32(out, static_cast<std::uint32_t>(position.y));
-            write_u32(out, static_cast<std::uint32_t>(position.z));
-            const char id = static_cast<char>(block);
-            out.write(&id, 1);
+
+    std::error_code status_error;
+    const std::filesystem::file_status status =
+        std::filesystem::symlink_status(path, status_error);
+    const bool has_existing = !status_error && std::filesystem::exists(status);
+    if (status_error && status_error != std::errc::no_such_file_or_directory)
+        throw std::runtime_error("Cannot inspect existing world save: " + status_error.message());
+    if (has_existing &&
+        (std::filesystem::is_symlink(status) || !std::filesystem::is_regular_file(status)))
+        throw std::runtime_error("Refusing to replace a non-regular or symbolic-link world save");
+
+    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
+    const std::filesystem::path temporary = path.string() + ".tmp-" + std::to_string(tick);
+    const std::filesystem::path backup = path.string() + ".backup-" + std::to_string(tick);
+    try {
+        {
+            std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+            if (!out) throw std::runtime_error("Cannot create world save: " + temporary.string());
+            out.write("MCPPWLD1", 8);
+            write_u32(out, seed_);
+            if (edits_.size() > std::numeric_limits<std::uint32_t>::max())
+                throw std::runtime_error("Too many block edits to save");
+            write_u32(out, static_cast<std::uint32_t>(edits_.size()));
+
+            std::vector<std::pair<BlockPos, Block>> ordered;
+            ordered.reserve(edits_.size());
+            for (const auto& edit : edits_) ordered.push_back(edit);
+            std::sort(ordered.begin(), ordered.end(), [](const auto& left, const auto& right) {
+                return std::tie(left.first.x, left.first.y, left.first.z) <
+                       std::tie(right.first.x, right.first.y, right.first.z);
+            });
+            for (const auto& [position, block] : ordered) {
+                write_u32(out, static_cast<std::uint32_t>(position.x));
+                write_u32(out, static_cast<std::uint32_t>(position.y));
+                write_u32(out, static_cast<std::uint32_t>(position.z));
+                const char id = static_cast<char>(block);
+                out.write(&id, 1);
+            }
+            out.flush();
+            if (!out) throw std::runtime_error("Failed writing world save: " + temporary.string());
         }
-        if (!out) throw std::runtime_error("Failed writing world save: " + temporary.string());
-    }
-    std::error_code error;
-    std::filesystem::rename(temporary, path, error);
-    if (error) {
-        std::filesystem::remove(path, error);
-        error.clear();
-        std::filesystem::rename(temporary, path, error);
-        if (error) throw std::runtime_error("Cannot replace world save: " + error.message());
+
+        bool backed_up = false;
+        if (has_existing) {
+            std::filesystem::rename(path, backup);
+            backed_up = true;
+        }
+        try {
+            std::filesystem::rename(temporary, path);
+        } catch (...) {
+            if (backed_up) {
+                std::error_code restore_error;
+                std::filesystem::rename(backup, path, restore_error);
+                if (restore_error)
+                    throw std::runtime_error("Could not publish world save; previous save remains at " +
+                                             backup.string() + ". Restore failed: " + restore_error.message());
+            }
+            throw;
+        }
+        if (backed_up) {
+            std::error_code cleanup_error;
+            std::filesystem::remove(backup, cleanup_error);
+        }
+    } catch (...) {
+        std::error_code cleanup_error;
+        std::filesystem::remove(temporary, cleanup_error);
+        throw;
     }
 }
 
@@ -227,7 +290,13 @@ void World::request_chunk(ChunkPos position) {
     }
     const std::uint32_t seed = seed_;
     workers_.submit([this, position, seed, local_edits = std::move(local_edits)]() mutable {
-        GeneratedChunk result{position, generate_chunk_blocks(position, seed, local_edits)};
+        GeneratedChunk result;
+        result.position = position;
+        try {
+            result.blocks = generate_chunk_blocks(position, seed, local_edits);
+        } catch (...) {
+            result.error = std::current_exception();
+        }
         std::lock_guard lock(results_mutex_);
         generated_chunks_.push(std::move(result));
     });
@@ -254,8 +323,18 @@ void World::update_streaming(int block_x, int block_z) {
     for (const ChunkPos position : wanted) request_chunk(position);
 
     for (auto it = chunks_.begin(); it != chunks_.end();) {
-        if (!should_keep(it->first)) it = chunks_.erase(it);
-        else ++it;
+        if (!should_keep(it->first)) {
+            const ChunkPos removed = it->first;
+            it = chunks_.erase(it);
+            // Neighbouring chunks may have hidden their shared border faces
+            // while this chunk was resident. Rebuild them after the unload.
+            schedule_mesh({removed.x - 1, removed.z});
+            schedule_mesh({removed.x + 1, removed.z});
+            schedule_mesh({removed.x, removed.z - 1});
+            schedule_mesh({removed.x, removed.z + 1});
+        } else {
+            ++it;
+        }
     }
 }
 
@@ -285,7 +364,14 @@ void World::schedule_mesh(ChunkPos position) {
     const std::uint64_t revision = ++it->second.mesh_revision;
     ChunkSnapshot snapshot = make_snapshot(position);
     workers_.submit([this, position, revision, snapshot = std::move(snapshot)]() mutable {
-        GeneratedMesh result{position, revision, build_chunk_mesh(snapshot)};
+        GeneratedMesh result;
+        result.position = position;
+        result.revision = revision;
+        try {
+            result.vertices = build_chunk_mesh(snapshot);
+        } catch (...) {
+            result.error = std::current_exception();
+        }
         std::lock_guard lock(results_mutex_);
         generated_meshes_.push(std::move(result));
     });
@@ -308,10 +394,15 @@ void World::pump_jobs() {
         std::swap(new_meshes, generated_meshes_);
     }
 
+    std::exception_ptr job_error;
     while (!new_chunks.empty()) {
         GeneratedChunk result = std::move(new_chunks.front());
         new_chunks.pop();
         pending_generation_.erase(result.position);
+        if (result.error) {
+            if (!job_error) job_error = result.error;
+            continue;
+        }
         if (!should_keep(result.position)) continue;
         Chunk chunk;
         chunk.position = result.position;
@@ -323,11 +414,16 @@ void World::pump_jobs() {
     while (!new_meshes.empty()) {
         GeneratedMesh result = std::move(new_meshes.front());
         new_meshes.pop();
+        if (result.error) {
+            if (!job_error) job_error = result.error;
+            continue;
+        }
         const auto it = chunks_.find(result.position);
         if (it == chunks_.end() || result.revision != it->second.mesh_revision) continue;
         it->second.mesh = std::move(result.vertices);
         it->second.mesh_ready = true;
     }
+    if (job_error) std::rethrow_exception(job_error);
 }
 
 Block World::get_block(int x, int y, int z) const {

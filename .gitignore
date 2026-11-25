@@ -4,7 +4,8 @@
 /worlds/
 /minecpp-data/
 *.mcw
-*.mcw.tmp
+*.mcw.tmp*
+*.mcw.backup-*
 *.log
 .DS_Store
 Thumbs.db

@@ -1,58 +1,71 @@
 # MineCPP roadmap
 
-MineCPP has two connected but distinct tracks: an offline launcher/preparation tool and an experimental native voxel client. The native client is not yet Minecraft-compatible; compatibility must be earned by implementing and testing the formats and game rules.
+MineCPP has two independent workstreams: an offline toolchain for files supplied from an existing Minecraft installation, and a native C++ voxel sandbox. The 1.0.0 release establishes foundations for both. It does **not** claim full Minecraft Java Edition compatibility.
 
-## 0.1.0 — Offline JAR import foundation
+## 1.0.0 — Offline preparation and voxel-engine foundation
 
-- C++20 command-line launcher executable.
-- Import an existing local Minecraft client JAR.
-- Extract ZIP Store and DEFLATE entries without modifying the source JAR.
-- Reject path traversal, absolute paths, symbolic links and special Unix file types, case-colliding paths, encrypted entries, unsupported methods, and oversized archives.
-- Copy the matching version JSON file when it is adjacent to the JAR.
-- Write a bounded, strictly parsed local file manifest with sizes and CRC-32 checksums.
-- Verify that imported paths contain no symbolic links and cannot be redirected outside the version directory.
-- Prevent replacement of a destination directory that contains the source JAR.
-- Detect generic `client.jar` files from their containing version folder.
-- List imported versions and verify their extracted files.
-- Automated ZIP fixtures for stored/DEFLATE data, corrupt CRCs, malicious paths, symlinks, duplicate paths, and invalid manifests; CLI smoke tests.
-- Preserve the existing standalone voxel sandbox as an experimental engine target.
+- [x] C++20 JAR importer with ZIP Store/DEFLATE support, staging and integrity manifest.
+- [x] Safe archive path validation, CRC verification and import listing.
+- [x] Strict JSON parser and local version metadata inspection.
+- [x] Asset-index parser, SHA-1 helper and local direct-library / asset-object preparation.
+- [x] Virtual-asset and map-to-resources compatibility mappings.
+- [x] Client logging configuration copy when declared.
+- [x] Prepared-resource manifest and verification command.
+- [x] Refuse to publish when required files are missing or unsupported inheritance/library requirements are present.
+- [x] Bounded NBT reader, gzip/zlib decompression and Anvil region reader.
+- [x] Decode 1.16+ padded block-state arrays and modern section palettes while preserving namespaced state IDs and properties.
+- [x] Map a small explicit subset of common vanilla states to built-in sandbox blocks.
+- [x] Separate player physics, fixed 60 Hz stepping, bounded collision substeps and voxel DDA targeting.
+- [x] Greedy meshing and safer local world-save writes.
+- [x] Dedicated source-level test targets and cross-platform CI workflow.
 
-## 0.2.x — Minecraft installation metadata
+The checklist records implementation in source. It does not imply tests were executed or passed; consult CI for the commit's actual results.
 
-- Parse the version JSON with a real JSON parser and validate its schema.
-- Resolve the version's asset index, libraries, native classifiers, logging configuration, and Java requirements.
-- Import only the assets and libraries referenced by the selected version.
-- Add offline completeness checks and a clear report of missing files.
-- Support multiple local game directories without searching the network.
-- Add safe migration for changes to the local import manifest.
+## 1.1.x — Resource resolver completeness
 
-## 0.3.x — Native resource preparation
+- [ ] Resolve inherited version metadata with cycle detection and a bounded inheritance depth.
+- [ ] Evaluate Mojang library allow/disallow rules for the current OS and architecture.
+- [ ] Resolve Maven coordinate-only libraries against existing local library paths.
+- [ ] Select and safely extract native classifiers for supported platforms.
+- [ ] Report Java runtime requirements and verify a user-selected local runtime.
+- [ ] Support additional asset-index and logging metadata variants.
+- [ ] Add offline diagnostic mode that lists all missing files without copying.
+- [ ] Add real version JSON and asset-index fixtures from user-owned installations.
 
-- Build a deterministic resource-preparation pipeline from imported client and server data supplied by the user.
-- Implement version-specific data extractors and document the supported game versions.
-- Verify source files against locally available official checksums where those metadata are present.
-- Keep generated resources separate from original JARs and assets.
-- Add resource-level tests and reproducible preparation reports.
+## 1.2.x — Minecraft resource and world data
 
-## 0.4.x — Launcher experience
+- [ ] Support the remaining Anvil chunk compression modes where their format is documented and testable.
+- [ ] Add external .mcc chunk payload handling with bounded reads.
+- [ ] Add legacy pre-1.16 palette packing and fixtures for the old section format.
+- [ ] Parse block registries, block-state definitions and tags across explicitly supported data versions.
+- [ ] Parse blockstate/model JSON, parents, variants and multipart definitions.
+- [ ] Decode PNG textures and build a material/texture atlas.
+- [ ] Build an importer that turns supported vanilla NBT/Anvil chunks into the native world representation without silently discarding unknown blocks.
+- [ ] Compare decoded chunks against user-provided reference saves.
 
-- Add a graphical C++ launcher UI.
-- Show imported versions, resource readiness, verification status, and storage paths.
-- Add profile settings, logs, crash reports, and launch configuration.
-- Keep all normal operations local and offline.
-- Do not add account or server authentication unless a separate, explicit requirement is agreed.
+## 1.3.x — Renderer and simulation
+
+- [ ] Add shader-based rendering and GPU vertex/index buffers.
+- [ ] Add proper material, UV, transparency and render-layer handling.
+- [ ] Add ambient occlusion, chunk lighting and dynamic light updates.
+- [ ] Add full block collision shapes instead of a single solid/air rule.
+- [ ] Add fluid simulation and biome-aware terrain generation.
+- [ ] Add entities, hitboxes, ticking, animation and sound.
+- [ ] Add inventory, item stacks, crafting and survival systems.
+- [ ] Add crash-safe, versioned world persistence and migration.
 
 ## Later — Native client compatibility
 
-- Upgrade the experimental renderer and world model.
-- Implement game data formats, terrain, block states, lighting, entities, inventory, UI, and world persistence.
-- Add deterministic tests against user-provided reference worlds and known vanilla behaviour.
-- Treat multiplayer, mod loaders, and compatibility with third-party servers as separate milestones.
-- Do not describe the client as Minecraft-compatible until parity is demonstrated by tests.
+- [ ] Reproduce the version-specific data preparation performed by the official client without running Mojang's Java client.
+- [ ] Implement the required client lifecycle, menus, settings and resource loading in C++.
+- [ ] Add reference tests for world generation, blocks, entities, physics and rendering.
+- [ ] Design protocol support as a separate milestone with explicit security and compatibility tests.
+- [ ] Publish a supported-version matrix and incompatibility list.
+- [ ] Claim Minecraft compatibility only after a reproducible conformance suite passes.
 
 ## Non-goals
 
-- Do not bundle Minecraft's proprietary code or assets.
-- Do not download game files or contact Mojang/Microsoft during offline import or verification.
-- Do not silently modify or delete the user's source JAR or original game directory.
-- Do not claim that extracted Java classes can run as a native C++ client.
+- Do not bundle Minecraft's proprietary code, assets or libraries.
+- Do not download files or contact Mojang/Microsoft during offline import, preparation or verification.
+- Do not modify or delete the user's original game installation.
+- Do not execute the imported Java bytecode as a substitute for the native client.
