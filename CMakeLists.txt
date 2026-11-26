@@ -20,6 +20,12 @@ add_library(minecpp_import STATIC
 target_include_directories(minecpp_import PUBLIC src)
 target_link_libraries(minecpp_import PUBLIC ZLIB::ZLIB)
 
+add_library(minecpp_region STATIC
+    src/region.cpp
+)
+target_include_directories(minecpp_region PUBLIC src)
+target_link_libraries(minecpp_region PUBLIC ZLIB::ZLIB)
+
 add_executable(minecpp-launcher
     src/launcher_main.cpp
 )
@@ -27,9 +33,11 @@ target_link_libraries(minecpp-launcher PRIVATE minecpp_import)
 
 if(MSVC)
     target_compile_options(minecpp_import PRIVATE /W4 /permissive-)
+    target_compile_options(minecpp_region PRIVATE /W4 /permissive-)
     target_compile_options(minecpp-launcher PRIVATE /W4 /permissive-)
 else()
     target_compile_options(minecpp_import PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    target_compile_options(minecpp_region PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp-launcher PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()
 
@@ -93,6 +101,10 @@ if(MINECPP_BUILD_TESTS)
     add_executable(minecpp_nbt_tests tests/nbt_tests.cpp)
     target_include_directories(minecpp_nbt_tests PRIVATE src)
     add_test(NAME minecpp_nbt_tests COMMAND minecpp_nbt_tests)
+
+    add_executable(minecpp_region_tests tests/region_tests.cpp)
+    target_link_libraries(minecpp_region_tests PRIVATE minecpp_region)
+    add_test(NAME minecpp_region_tests COMMAND minecpp_region_tests)
 
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)

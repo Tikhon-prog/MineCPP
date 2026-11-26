@@ -8,6 +8,7 @@
 - Add `Aabb`/`Vec3d` and `move_with_collision`: double-precision entity collision with vanilla axis order (Y, then larger of X/Z) and step-up. Full-cube blocks only.
 - Add `ItemRegistry`, `ItemStack` and `Inventory`: stack limits, merge/split, pickup order. Data components not yet modelled.
 - Add NBT reader/writer (`nbt.hpp`): all 12 tag types, big-endian, nameless network root, depth and length limits against hostile input, modified UTF-8 conversion.
+- Add Anvil region reader/writer (`region.hpp`): header tables, sector validation, gzip/zlib/none chunk data, decompression-bomb limit; LZ4 and external `.mcc` chunks are reported as unsupported.
 
 ## 0.1.0 — Native voxel prototype
 
