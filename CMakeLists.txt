@@ -78,6 +78,18 @@ if(MINECPP_BUILD_TESTS)
     target_include_directories(minecpp_paletted_container_tests PRIVATE src)
     add_test(NAME minecpp_paletted_container_tests COMMAND minecpp_paletted_container_tests)
 
+    add_executable(minecpp_chunk_section_tests tests/chunk_section_tests.cpp)
+    target_include_directories(minecpp_chunk_section_tests PRIVATE src)
+    add_test(NAME minecpp_chunk_section_tests COMMAND minecpp_chunk_section_tests)
+
+    add_executable(minecpp_collision_tests tests/collision_tests.cpp)
+    target_include_directories(minecpp_collision_tests PRIVATE src)
+    add_test(NAME minecpp_collision_tests COMMAND minecpp_collision_tests)
+
+    add_executable(minecpp_items_tests tests/items_tests.cpp)
+    target_include_directories(minecpp_items_tests PRIVATE src)
+    add_test(NAME minecpp_items_tests COMMAND minecpp_items_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)

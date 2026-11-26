@@ -4,6 +4,9 @@
 
 - Add `PackedStorage`: Minecraft-style palette index storage (padded 64-bit words, 1-32 bits per entry) with tests. First module ported with Horizon (MIT) as reference.
 - Add `PalettedContainer`: palette + packed indices that grow with the palette, uniform containers without storage, and validated save/load.
+- Add `ChunkSection`: 16x16x16 blocks and 4x4x4 biome cells on `PalettedContainer`, vanilla YZX index order, non-air count.
+- Add `Aabb`/`Vec3d` and `move_with_collision`: double-precision entity collision with vanilla axis order (Y, then larger of X/Z) and step-up. Full-cube blocks only.
+- Add `ItemRegistry`, `ItemStack` and `Inventory`: stack limits, merge/split, pickup order. Data components not yet modelled.
 
 ## 0.1.0 — Native voxel prototype
 
