@@ -114,6 +114,10 @@ if(MINECPP_BUILD_TESTS)
     target_include_directories(minecpp_random_tests PRIVATE src)
     add_test(NAME minecpp_random_tests COMMAND minecpp_random_tests)
 
+    add_executable(minecpp_protocol_tests tests/protocol_tests.cpp)
+    target_link_libraries(minecpp_protocol_tests PRIVATE minecpp_region)
+    add_test(NAME minecpp_protocol_tests COMMAND minecpp_protocol_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)
