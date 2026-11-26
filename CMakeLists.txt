@@ -110,6 +110,10 @@ if(MINECPP_BUILD_TESTS)
     target_link_libraries(minecpp_chunk_io_tests PRIVATE minecpp_region)
     add_test(NAME minecpp_chunk_io_tests COMMAND minecpp_chunk_io_tests)
 
+    add_executable(minecpp_random_tests tests/random_tests.cpp)
+    target_include_directories(minecpp_random_tests PRIVATE src)
+    add_test(NAME minecpp_random_tests COMMAND minecpp_random_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)

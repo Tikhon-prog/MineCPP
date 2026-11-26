@@ -10,6 +10,7 @@
 - Add NBT reader/writer (`nbt.hpp`): all 12 tag types, big-endian, nameless network root, depth and length limits against hostile input, modified UTF-8 conversion.
 - Add Anvil region reader/writer (`region.hpp`): header tables, sector validation, gzip/zlib/none chunk data, decompression-bomb limit; LZ4 and external `.mcc` chunks are reported as unsupported.
 - Add `BlockStateRegistry`/`NameRegistry` and `chunk_io.hpp`: parse and write 1.18+ chunk NBT sections into `ChunkSection` with unknown tags (light, heightmaps, block entities) preserved; malformed palettes and data are rejected.
+- Add `random.hpp`: bit-exact `java.util.Random`, Stafford mix13 and xoroshiro128++ with seed expansion. Java Random and mix13 are tested against reference values; xoroshiro seeding is not yet verified against vanilla.
 
 ## 0.1.0 — Native voxel prototype
 
