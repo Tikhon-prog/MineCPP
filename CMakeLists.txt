@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MineCPP VERSION 0.1.0 LANGUAGES CXX)
+project(MineCPP VERSION 0.2.0 LANGUAGES CXX)
 
 option(MINECPP_BUILD_TESTS "Build the native world and importer tests" ON)
 option(MINECPP_BUILD_VOXEL_PROTOTYPE "Build the experimental OpenGL voxel sandbox" ON)
@@ -93,6 +93,10 @@ if(MINECPP_BUILD_TESTS)
     add_executable(minecpp_collision_tests tests/collision_tests.cpp)
     target_include_directories(minecpp_collision_tests PRIVATE src)
     add_test(NAME minecpp_collision_tests COMMAND minecpp_collision_tests)
+
+    add_executable(minecpp_player_physics_tests tests/player_physics_tests.cpp)
+    target_include_directories(minecpp_player_physics_tests PRIVATE src)
+    add_test(NAME minecpp_player_physics_tests COMMAND minecpp_player_physics_tests)
 
     add_executable(minecpp_items_tests tests/items_tests.cpp)
     target_include_directories(minecpp_items_tests PRIVATE src)

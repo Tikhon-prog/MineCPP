@@ -1,10 +1,25 @@
 # MineCPP
 
-**MineCPP 0.1.0 — an offline-first C++20 Minecraft preparation tool and native voxel prototype.**
+**MineCPP 0.2.0 — an offline-first C++20 Minecraft preparation tool, native voxel prototype and engine foundations.**
 
 MineCPP is an independent C++ project. Its first launcher milestone imports an existing Minecraft Java client JAR from disk, safely extracts its ZIP entries, preserves nearby version metadata, and writes a local integrity manifest. It never downloads Minecraft or contacts an account service.
 
 The repository also contains an experimental native voxel sandbox (the minecpp executable). That sandbox is not yet compatible with Minecraft Java Edition. The long-term goal is a native C++ client that can use resources prepared from a player's own local Minecraft installation.
+
+## Engine foundations (0.2.0)
+
+Independent C++20 rewrites of Minecraft Java Edition building blocks, structured after the MIT-licensed [Horizon](https://github.com/horizon-rust/horizon) project. Each module has tests under `tests/`.
+
+| Area | Files |
+| --- | --- |
+| Chunk storage | `packed_storage.hpp`, `paletted_container.hpp`, `chunk_section.hpp`, `chunk_io.hpp`, `registries.hpp` |
+| Formats | `nbt.hpp`, `region.hpp`/`region.cpp` (Anvil `.mca`) |
+| Randomness and math | `random.hpp` (Java `Random`, xoroshiro128++), `mth.hpp` |
+| Physics | `aabb.hpp`, `collision.hpp`, `player_physics.hpp` |
+| Items | `items.hpp` (registry, stacks, inventory) |
+| Network | `protocol.hpp`, `packet_frame.hpp` |
+
+Not yet: packet registry, world generation parity, lighting, entities beyond the player, rendering of these chunks. See `docs/ROADMAP.md`.
 
 ## Launcher 0.1.0
 
