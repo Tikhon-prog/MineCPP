@@ -7,6 +7,7 @@
 - Add `ChunkSection`: 16x16x16 blocks and 4x4x4 biome cells on `PalettedContainer`, vanilla YZX index order, non-air count.
 - Add `Aabb`/`Vec3d` and `move_with_collision`: double-precision entity collision with vanilla axis order (Y, then larger of X/Z) and step-up. Full-cube blocks only.
 - Add `ItemRegistry`, `ItemStack` and `Inventory`: stack limits, merge/split, pickup order. Data components not yet modelled.
+- Add NBT reader/writer (`nbt.hpp`): all 12 tag types, big-endian, nameless network root, depth and length limits against hostile input, modified UTF-8 conversion.
 
 ## 0.1.0 — Native voxel prototype
 

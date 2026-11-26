@@ -90,6 +90,10 @@ if(MINECPP_BUILD_TESTS)
     target_include_directories(minecpp_items_tests PRIVATE src)
     add_test(NAME minecpp_items_tests COMMAND minecpp_items_tests)
 
+    add_executable(minecpp_nbt_tests tests/nbt_tests.cpp)
+    target_include_directories(minecpp_nbt_tests PRIVATE src)
+    add_test(NAME minecpp_nbt_tests COMMAND minecpp_nbt_tests)
+
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
         target_link_libraries(minecpp_tests PRIVATE minecpp_world)
