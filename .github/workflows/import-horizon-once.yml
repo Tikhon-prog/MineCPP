@@ -1,0 +1,44 @@
+name: Import upstream Horizon snapshot
+
+on:
+  push:
+    branches:
+      - Horizon
+    paths:
+      - .github/workflows/import-horizon-once.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: import-upstream-horizon
+  cancel-in-progress: false
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout MineCPP Horizon branch
+        uses: actions/checkout@v4
+        with:
+          ref: Horizon
+          fetch-depth: 1
+
+      - name: Clone upstream Horizon
+        run: git clone --depth 1 --branch main --single-branch https://github.com/horizon-rust/horizon.git "$RUNNER_TEMP/horizon"
+
+      - name: Replace branch contents with upstream snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rsync -a --delete --exclude='.git' "$RUNNER_TEMP/horizon/" "$GITHUB_WORKSPACE/"
+          git add -A
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --cached --quiet; then
+            echo "No file changes to import."
+            exit 0
+          fi
+          git commit -m "chore: import horizon-rust/horizon main snapshot"
+          git push origin HEAD:Horizon
