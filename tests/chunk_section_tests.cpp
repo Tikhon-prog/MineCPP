@@ -78,7 +78,7 @@ int main() {
         auto biomes = PalettedContainer::uniform(0U, 64, 1);
         const ChunkSection s = ChunkSection::from_containers(blocks, biomes);
         CHECK(s.non_air_count() == 2);
-        CHECK(s.get_block(4, 6, 0) == 3U);  // index 100 = y 0, z 6, x 4
+        CHECK(s.get_block(4, 0, 6) == 3U);  // index 100 = x 4, y 0, z 6
     }
 
     // Errors.

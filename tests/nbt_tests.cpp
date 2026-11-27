@@ -111,7 +111,8 @@ int main() {
                          0x01, 0x00, 0x01, 'b', 0x02,
                          0x01, 0x00, 0x01, 'a', 0x09,
                          0x00};
-        const Compound& c = read_root(b).tag.as<Compound>();
+        const Root root = read_root(b);  // keep the Root alive: `c` points into it
+        const Compound& c = root.tag.as<Compound>();
         CHECK(c.entries.size() == 2);
         CHECK(c.entries[0].first == "a" && c.entries[0].second.as<std::int8_t>() == 9);
         CHECK(c.entries[1].first == "b");

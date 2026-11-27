@@ -1,6 +1,7 @@
 #pragma once
 
 #include "chunk.hpp"
+#include "tiles.hpp"
 
 #include <vector>
 
@@ -20,6 +21,10 @@ struct ChunkSnapshot {
         return blocks[index];
     }
 };
+
+// Selects the atlas UVs used by build_chunk_mesh. Call before any chunk is
+// meshed (worker threads read it without locking).
+void set_mesh_uv_table(const TileUvTable& table);
 
 [[nodiscard]] std::vector<MeshVertex> build_chunk_mesh(const ChunkSnapshot& snapshot);
 

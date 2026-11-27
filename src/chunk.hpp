@@ -54,7 +54,8 @@ inline std::size_t block_index(int x, int y, int z) {
            kChunkSize + static_cast<std::size_t>(x);
 }
 
-struct MeshVertex { float x, y, z, r, g, b; };
+// Position, colour (shade; flat colour when no atlas is loaded), atlas UV.
+struct MeshVertex { float x, y, z, r, g, b, u, v; };
 
 struct Chunk {
     ChunkPos position;

@@ -1,10 +1,20 @@
 # MineCPP
 
-**MineCPP 0.2.0 — an offline-first C++20 Minecraft preparation tool, native voxel prototype and engine foundations.**
+**MineCPP 0.3.0 — an offline-first C++20 Minecraft preparation tool, native voxel prototype and engine foundations.**
 
 MineCPP is an independent C++ project. Its first launcher milestone imports an existing Minecraft Java client JAR from disk, safely extracts its ZIP entries, preserves nearby version metadata, and writes a local integrity manifest. It never downloads Minecraft or contacts an account service.
 
 The repository also contains an experimental native voxel sandbox (the minecpp executable). That sandbox is not yet compatible with Minecraft Java Edition. The long-term goal is a native C++ client that can use resources prepared from a player's own local Minecraft installation.
+
+## Textures and settings (0.3.0)
+
+`minecpp` uses the block textures from **your own** Minecraft client jar; MineCPP ships no Mojang assets.
+
+1. Install a version with the official Minecraft launcher (it creates `~/.minecraft/versions/<id>/<id>.jar`).
+2. Run `./build/minecpp`. The first start imports the newest version into `minecpp-data/` (a few seconds) and then reuses it.
+3. Pick another jar with `--jar PATH` or another folder with `--minecraft-dir PATH`. `--no-textures` keeps flat colours.
+
+Settings live in `minecpp-settings.cfg` next to where you run the game (`key = value`, `#` comments): `render_distance`, `fov`, `mouse_sensitivity`, `vsync`, `fullscreen`, `window_width`, `window_height`, `textures`, `minecraft_dir`, `jar`, `data_dir`. Command-line options override the file. In game: F11 fullscreen, V vsync, `[` `]` field of view, `-` `=` mouse sensitivity; these are written back on exit.
 
 ## Engine foundations (0.2.0)
 

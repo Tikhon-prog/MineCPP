@@ -16,6 +16,8 @@
 #include "renderer.hpp"
 
 #include "math.hpp"
+#include "texture_atlas.hpp"
+#include "tiles.hpp"
 
 #include <algorithm>
 #include <array>
@@ -23,16 +25,20 @@
 #include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <map>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
 
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
+
 namespace minecpp {
 namespace {
 constexpr float kPlayerHeight = 1.8F;
 constexpr float kPlayerRadius = 0.30F;
-constexpr float kMouseSensitivity = 0.11F;
 constexpr float kPi = 3.14159265358979323846F;
 
 constexpr std::array<Block, 6> kHotbar{
@@ -54,17 +60,123 @@ bool inside_player_aabb(const Vec3& feet, BlockPos block) {
 }
 }
 
-Game::Game(std::filesystem::path world_path, std::uint32_t seed,
-           bool seed_explicit, int render_distance)
-    : world_path_(std::move(world_path)), world_(seed, render_distance) {
+Game::Game(std::filesystem::path world_path, std::uint32_t seed, bool seed_explicit,
+           Settings settings, std::filesystem::path settings_path, std::filesystem::path texture_dir)
+    : world_path_(std::move(world_path)),
+      settings_(std::move(settings)),
+      settings_path_(std::move(settings_path)),
+      texture_dir_(std::move(texture_dir)),
+      world_(seed, settings_.render_distance) {
+    settings_.clamp();
+    windowed_width_ = settings_.window_width;
+    windowed_height_ = settings_.window_height;
     world_.load(world_path_, seed_explicit);
 }
 
 Game::~Game() {
+    if (atlas_texture_ != 0) {
+        glDeleteTextures(1, &atlas_texture_);
+    }
     if (window_) {
         glfwDestroyWindow(window_);
         glfwTerminate();
     }
+}
+
+void Game::show_notice(const std::string& text) {
+    notice_ = text;
+    notice_until_ = glfwGetTime() + 2.5;
+    last_title_update_ = 0.0;  // refresh the title now
+}
+
+bool Game::key_pressed_once(int key) {
+    const bool down = glfwGetKey(window_, key) == GLFW_PRESS;
+    bool& previous = hotkey_state_[key];
+    const bool fired = down && !previous;
+    previous = down;
+    return fired;
+}
+
+void Game::toggle_fullscreen() {
+    if (glfwGetWindowMonitor(window_) == nullptr) {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = monitor != nullptr ? glfwGetVideoMode(monitor) : nullptr;
+        if (mode == nullptr) return;
+        glfwGetWindowPos(window_, &windowed_x_, &windowed_y_);
+        glfwGetWindowSize(window_, &windowed_width_, &windowed_height_);
+        glfwSetWindowMonitor(window_, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        settings_.fullscreen = true;
+    } else {
+        glfwSetWindowMonitor(window_, nullptr, windowed_x_, windowed_y_, windowed_width_, windowed_height_, 0);
+        settings_.fullscreen = false;
+    }
+    glfwSwapInterval(settings_.vsync ? 1 : 0);
+    first_mouse_ = true;
+    settings_dirty_ = true;
+}
+
+void Game::handle_hotkeys() {
+    if (key_pressed_once(GLFW_KEY_F11)) {
+        toggle_fullscreen();
+        show_notice(settings_.fullscreen ? "Fullscreen" : "Windowed");
+    }
+    if (key_pressed_once(GLFW_KEY_V)) {
+        settings_.vsync = !settings_.vsync;
+        glfwSwapInterval(settings_.vsync ? 1 : 0);
+        settings_dirty_ = true;
+        show_notice(settings_.vsync ? "VSync on" : "VSync off");
+    }
+    if (key_pressed_once(GLFW_KEY_LEFT_BRACKET)) {
+        settings_.fov -= 5.0F;
+        settings_.clamp();
+        settings_dirty_ = true;
+        show_notice("FOV " + std::to_string(static_cast<int>(settings_.fov)));
+    }
+    if (key_pressed_once(GLFW_KEY_RIGHT_BRACKET)) {
+        settings_.fov += 5.0F;
+        settings_.clamp();
+        settings_dirty_ = true;
+        show_notice("FOV " + std::to_string(static_cast<int>(settings_.fov)));
+    }
+    if (key_pressed_once(GLFW_KEY_MINUS)) {
+        settings_.mouse_sensitivity -= 0.01F;
+        settings_.clamp();
+        settings_dirty_ = true;
+        show_notice("Mouse sensitivity " + std::to_string(static_cast<int>(settings_.mouse_sensitivity * 100.0F + 0.5F)));
+    }
+    if (key_pressed_once(GLFW_KEY_EQUAL)) {
+        settings_.mouse_sensitivity += 0.01F;
+        settings_.clamp();
+        settings_dirty_ = true;
+        show_notice("Mouse sensitivity " + std::to_string(static_cast<int>(settings_.mouse_sensitivity * 100.0F + 0.5F)));
+    }
+}
+
+void Game::setup_textures() {
+    textured_ = false;
+    uv_table_ = TileUvTable{};
+    if (settings_.textures && !texture_dir_.empty()) {
+        const Atlas atlas = build_atlas(texture_dir_);
+        if (atlas.loaded_count() > 0) {
+            glGenTextures(1, &atlas_texture_);
+            glBindTexture(GL_TEXTURE_2D, atlas_texture_);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+            glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, atlas.width(), atlas.height(), 0, GL_RGBA,
+                         GL_UNSIGNED_BYTE, atlas.rgba.data());
+            uv_table_ = atlas.uv_table();
+            textured_ = true;
+            std::cout << "Loaded " << atlas.loaded_count() << "/" << kTileCount
+                      << " block textures from " << texture_dir_.string() << '\n';
+        } else {
+            std::cout << "No block textures found in " << texture_dir_.string() << "; using flat colours.\n";
+        }
+    }
+    // Must be set before the first chunk is meshed.
+    set_mesh_uv_table(uv_table_);
 }
 
 int Game::run() {
@@ -73,14 +185,27 @@ int Game::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
     glfwWindowHint(GLFW_DOUBLEBUFFER, GLFW_TRUE);
     glfwWindowHint(GLFW_DEPTH_BITS, 24);
-    window_ = glfwCreateWindow(1280, 720, "MineCPP — preparing voxel world", nullptr, nullptr);
+    GLFWmonitor* start_monitor = nullptr;
+    int start_width = settings_.window_width;
+    int start_height = settings_.window_height;
+    if (settings_.fullscreen) {
+        start_monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = start_monitor != nullptr ? glfwGetVideoMode(start_monitor) : nullptr;
+        if (mode != nullptr) {
+            start_width = mode->width;
+            start_height = mode->height;
+        } else {
+            start_monitor = nullptr;
+        }
+    }
+    window_ = glfwCreateWindow(start_width, start_height, "MineCPP — preparing voxel world", start_monitor, nullptr);
     if (!window_) {
         glfwTerminate();
         throw std::runtime_error("Could not create an OpenGL window. Update your graphics driver.");
     }
 
     glfwMakeContextCurrent(window_);
-    glfwSwapInterval(1);
+    glfwSwapInterval(settings_.vsync ? 1 : 0);
     glfwSetWindowUserPointer(window_, this);
     glfwSetCursorPosCallback(window_, &Game::mouse_callback);
     glfwSetInputMode(window_, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
@@ -90,6 +215,7 @@ int Game::run() {
     glDisable(GL_CULL_FACE);
     glDisable(GL_TEXTURE_2D);
     glClearColor(0.53F, 0.76F, 0.94F, 1.0F);
+    setup_textures();
 
     std::cout << "Generating the spawn area using background worker threads...\n";
     while (!glfwWindowShouldClose(window_) && !world_.has_spawn_chunk()) {
@@ -141,6 +267,13 @@ int Game::run() {
 
     world_.save(world_path_);
     std::cout << "Saved world to " << world_path_.string() << '\n';
+    if (settings_dirty_ && !settings_path_.empty()) {
+        if (save_settings(settings_path_, settings_)) {
+            std::cout << "Saved settings to " << settings_path_.string() << '\n';
+        } else {
+            std::cerr << "Could not write " << settings_path_.string() << '\n';
+        }
+    }
     return 0;
 }
 
@@ -161,8 +294,8 @@ void Game::on_mouse_move(double x, double y) {
     const double dy = last_mouse_y_ - y;
     last_mouse_x_ = x;
     last_mouse_y_ = y;
-    player_.yaw += static_cast<float>(dx) * kMouseSensitivity;
-    player_.pitch = std::clamp(player_.pitch + static_cast<float>(dy) * kMouseSensitivity, -89.0F, 89.0F);
+    player_.yaw += static_cast<float>(dx) * settings_.mouse_sensitivity;
+    player_.pitch = std::clamp(player_.pitch + static_cast<float>(dy) * settings_.mouse_sensitivity, -89.0F, 89.0F);
 }
 
 Vec3 Game::look_direction() const {
@@ -284,6 +417,7 @@ void Game::update(float delta_time) {
         first_mouse_ = true;
     }
     previous_tab_ = tab;
+    handle_hotkeys();
 
     for (int i = 0; i < 6; ++i) {
         const int key = GLFW_KEY_1 + i;
@@ -308,7 +442,7 @@ void Game::render() {
     const double aspect = static_cast<double>(width) / static_cast<double>(height);
     const double near_plane = 0.08;
     const double far_plane = 180.0;
-    const double top = near_plane * std::tan(static_cast<double>(radians(70.0F)) * 0.5);
+    const double top = near_plane * std::tan(static_cast<double>(radians(settings_.fov)) * 0.5);
     const double right = top * aspect;
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
@@ -324,13 +458,26 @@ void Game::render() {
     // OpenGL 1.1 client arrays avoid a glColor/glVertex call for every vertex.
     glEnableClientState(GL_VERTEX_ARRAY);
     glEnableClientState(GL_COLOR_ARRAY);
+    if (textured_) {
+        glEnable(GL_TEXTURE_2D);
+        glBindTexture(GL_TEXTURE_2D, atlas_texture_);
+        glEnable(GL_ALPHA_TEST);  // leaves have transparent gaps
+        glAlphaFunc(GL_GREATER, 0.5F);
+        glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+    }
     for (const auto& [position, chunk] : world_.chunks()) {
         (void)position;
         if (!chunk.mesh_ready || chunk.mesh.empty()) continue;
         const auto stride = static_cast<GLsizei>(sizeof(MeshVertex));
         glVertexPointer(3, GL_FLOAT, stride, static_cast<const void*>(&chunk.mesh.front().x));
         glColorPointer(3, GL_FLOAT, stride, static_cast<const void*>(&chunk.mesh.front().r));
+        if (textured_) glTexCoordPointer(2, GL_FLOAT, stride, static_cast<const void*>(&chunk.mesh.front().u));
         glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(chunk.mesh.size()));
+    }
+    if (textured_) {
+        glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+        glDisable(GL_ALPHA_TEST);
+        glDisable(GL_TEXTURE_2D);
     }
     glDisableClientState(GL_COLOR_ARRAY);
     glDisableClientState(GL_VERTEX_ARRAY);
@@ -408,14 +555,33 @@ void Game::render() {
         glVertex2f(x0, slot_bottom); glVertex2f(x1, slot_bottom);
         glVertex2f(x1, slot_top); glVertex2f(x0, slot_top);
         glEnd();
-        const Color3 color = block_color(kHotbar[i]);
-        glColor3f(color.r, color.g, color.b);
-        glBegin(GL_QUADS);
-        glVertex2f(x0 + 0.012F, slot_bottom + 0.018F);
-        glVertex2f(x1 - 0.012F, slot_bottom + 0.018F);
-        glVertex2f(x1 - 0.012F, slot_top - 0.018F);
-        glVertex2f(x0 + 0.012F, slot_top - 0.018F);
-        glEnd();
+        if (textured_) {
+            // Grass shows its top, every other block its side texture.
+            const FaceKind kind = kHotbar[i] == Block::Grass ? FaceKind::Top : FaceKind::Side;
+            const UvRect uv = uv_table_.uv[static_cast<std::size_t>(tile_for(kHotbar[i], kind))];
+            glEnable(GL_TEXTURE_2D);
+            glBindTexture(GL_TEXTURE_2D, atlas_texture_);
+            glEnable(GL_ALPHA_TEST);
+            glAlphaFunc(GL_GREATER, 0.5F);
+            glColor3f(1.0F, 1.0F, 1.0F);
+            glBegin(GL_QUADS);
+            glTexCoord2f(uv.u0, uv.v1); glVertex2f(x0 + 0.012F, slot_bottom + 0.018F);
+            glTexCoord2f(uv.u1, uv.v1); glVertex2f(x1 - 0.012F, slot_bottom + 0.018F);
+            glTexCoord2f(uv.u1, uv.v0); glVertex2f(x1 - 0.012F, slot_top - 0.018F);
+            glTexCoord2f(uv.u0, uv.v0); glVertex2f(x0 + 0.012F, slot_top - 0.018F);
+            glEnd();
+            glDisable(GL_ALPHA_TEST);
+            glDisable(GL_TEXTURE_2D);
+        } else {
+            const Color3 color = block_color(kHotbar[i]);
+            glColor3f(color.r, color.g, color.b);
+            glBegin(GL_QUADS);
+            glVertex2f(x0 + 0.012F, slot_bottom + 0.018F);
+            glVertex2f(x1 - 0.012F, slot_bottom + 0.018F);
+            glVertex2f(x1 - 0.012F, slot_top - 0.018F);
+            glVertex2f(x0 + 0.012F, slot_top - 0.018F);
+            glEnd();
+        }
     }
 
     glPopMatrix();
@@ -429,12 +595,15 @@ void Game::update_window_title(double now) {
     if (now - last_title_update_ < 0.2) return;
     last_title_update_ = now;
     std::ostringstream title;
-    title << "MineCPP 0.1.0 | XYZ " << std::fixed << std::setprecision(1)
+    title << "MineCPP 0.3.0 | XYZ " << std::fixed << std::setprecision(1)
           << player_.position.x << " " << player_.position.y << " " << player_.position.z
           << " | " << block_name(kHotbar[static_cast<std::size_t>(selected_block_)])
           << " | Chunks " << world_.loaded_chunk_count()
           << " | Jobs " << world_.pending_job_count()
+          << " | FOV " << static_cast<int>(settings_.fov)
+          << " | " << (textured_ ? "textures" : "flat colours")
           << " | " << (mouse_captured_ ? "Tab: unlock mouse" : "Tab: capture mouse");
+    if (now < notice_until_) title << " | " << notice_;
     glfwSetWindowTitle(window_, title.str().c_str());
 }
 

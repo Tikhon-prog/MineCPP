@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0 — Textures from your own jar, settings
+
+- The sandbox now draws with the real block textures from the player's own Minecraft client jar. On start it looks for the newest version in `~/.minecraft/versions` (or `--minecraft-dir`/`--jar`), imports it once into `minecpp-data/`, and packs `assets/minecraft/textures/block` into an atlas. Nothing is bundled or downloaded. Without a jar it falls back to the old flat colours.
+- Add a PNG decoder (`png.hpp`, uses zlib) and `texture_atlas.hpp`: grass top and leaves get the plains tint baked in, the grass side composites the overlay, animated strips use their first frame, larger resource-pack textures are resampled.
+- Mesh vertices carry UVs (`MeshVertex` gained `u`, `v`); `set_mesh_uv_table` selects the atlas. The hotbar shows textured icons.
+- Add a settings file `minecpp-settings.cfg` (`render_distance`, `fov`, `mouse_sensitivity`, `vsync`, `fullscreen`, window size, `textures`, `minecraft_dir`, `jar`, `data_dir`) plus CLI overrides, and in-game hotkeys: F11 fullscreen, V vsync, `[` `]` FOV, `-` `=` mouse sensitivity. Hotkey changes are saved on exit.
+- Fix two tests that were wrong, not the code: `chunk_section_tests` passed `get_block` arguments in the wrong order, and `nbt_tests` kept a reference into a destroyed temporary.
+
 ## 0.2.0 — Native engine foundations
 
 First version of the C++ rewrite's building blocks, with Horizon (MIT) as the reference for structure. Everything is header/test level: the voxel sandbox is unchanged and this is not Minecraft-compatible yet. Nothing here has been compiled or run in CI by the author of these modules; treat the first build as the first real test.

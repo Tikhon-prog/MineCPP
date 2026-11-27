@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MineCPP VERSION 0.2.0 LANGUAGES CXX)
+project(MineCPP VERSION 0.3.0 LANGUAGES CXX)
 
 option(MINECPP_BUILD_TESTS "Build the native world and importer tests" ON)
 option(MINECPP_BUILD_VOXEL_PROTOTYPE "Build the experimental OpenGL voxel sandbox" ON)
@@ -26,6 +26,14 @@ add_library(minecpp_region STATIC
 target_include_directories(minecpp_region PUBLIC src)
 target_link_libraries(minecpp_region PUBLIC ZLIB::ZLIB)
 
+# PNG decoding and the block texture atlas built from an imported client jar.
+add_library(minecpp_assets STATIC
+    src/png.cpp
+    src/texture_atlas.cpp
+)
+target_include_directories(minecpp_assets PUBLIC src)
+target_link_libraries(minecpp_assets PUBLIC ZLIB::ZLIB)
+
 add_executable(minecpp-launcher
     src/launcher_main.cpp
 )
@@ -34,10 +42,12 @@ target_link_libraries(minecpp-launcher PRIVATE minecpp_import)
 if(MSVC)
     target_compile_options(minecpp_import PRIVATE /W4 /permissive-)
     target_compile_options(minecpp_region PRIVATE /W4 /permissive-)
+    target_compile_options(minecpp_assets PRIVATE /W4 /permissive-)
     target_compile_options(minecpp-launcher PRIVATE /W4 /permissive-)
 else()
     target_compile_options(minecpp_import PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp_region PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    target_compile_options(minecpp_assets PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp-launcher PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()
 
@@ -58,7 +68,7 @@ if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         src/renderer.cpp
     )
     target_include_directories(minecpp PRIVATE src)
-    target_link_libraries(minecpp PRIVATE minecpp_world glfw OpenGL::GL)
+    target_link_libraries(minecpp PRIVATE minecpp_world minecpp_assets minecpp_import glfw OpenGL::GL)
 
     if(MSVC)
         target_compile_options(minecpp_world PRIVATE /W4 /permissive-)
@@ -121,6 +131,24 @@ if(MINECPP_BUILD_TESTS)
     add_executable(minecpp_protocol_tests tests/protocol_tests.cpp)
     target_link_libraries(minecpp_protocol_tests PRIVATE minecpp_region)
     add_test(NAME minecpp_protocol_tests COMMAND minecpp_protocol_tests)
+
+    add_executable(minecpp_png_tests tests/png_tests.cpp)
+    target_include_directories(minecpp_png_tests PRIVATE tests)
+    target_link_libraries(minecpp_png_tests PRIVATE minecpp_assets)
+    add_test(NAME minecpp_png_tests COMMAND minecpp_png_tests)
+
+    add_executable(minecpp_texture_atlas_tests tests/texture_atlas_tests.cpp)
+    target_include_directories(minecpp_texture_atlas_tests PRIVATE tests)
+    target_link_libraries(minecpp_texture_atlas_tests PRIVATE minecpp_assets)
+    add_test(NAME minecpp_texture_atlas_tests COMMAND minecpp_texture_atlas_tests)
+
+    add_executable(minecpp_settings_tests tests/settings_tests.cpp)
+    target_include_directories(minecpp_settings_tests PRIVATE src)
+    add_test(NAME minecpp_settings_tests COMMAND minecpp_settings_tests)
+
+    add_executable(minecpp_jar_locator_tests tests/jar_locator_tests.cpp)
+    target_include_directories(minecpp_jar_locator_tests PRIVATE src)
+    add_test(NAME minecpp_jar_locator_tests COMMAND minecpp_jar_locator_tests)
 
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
