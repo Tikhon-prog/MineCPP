@@ -6,6 +6,17 @@ MineCPP is an independent C++ project. Its first launcher milestone imports an e
 
 The repository also contains an experimental native voxel sandbox (the minecpp executable). That sandbox is not yet compatible with Minecraft Java Edition. The long-term goal is a native C++ client that can use resources prepared from a player's own local Minecraft installation.
 
+## Launching the real game (0.4.0)
+
+```bash
+./build/minecpp-launcher                 # interactive menu (terminal)
+./build/minecpp-launcher versions        # installed versions
+./build/minecpp-launcher launch latest --player Steve --memory 4096
+./build/minecpp-launcher launch 1.21.4 --dry-run   # print the command only
+```
+
+The launcher uses what the official launcher installed in `~/.minecraft` (or `--minecraft-dir`). It does not download anything and cannot sign in: offline mode, so singleplayer and offline servers. Versions before 1.19 are refused (extracted natives not implemented). Settings are saved in `minecpp-launcher.cfg`.
+
 ## Textures and settings (0.3.0)
 
 `minecpp` uses the block textures from **your own** Minecraft client jar; MineCPP ships no Mojang assets.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 — Launcher starts the real Minecraft
+
+- `minecpp-launcher launch [VERSION|latest]` builds the same java command line as the official launcher from a version it already installed (`versions/`, `libraries/`, `assets/`) and starts the real game with an offline player. Merges `inheritsFrom` profiles (Fabric style), evaluates `rules` (os, arch, custom resolution), substitutes all `${...}` placeholders, supports `-Xmx`, window size, game folder and extra JVM/game arguments. `--dry-run` prints the command.
+- Offline UUID is vanilla's `MD5("OfflinePlayer:" + name)` (own MD5 in `md5.hpp`); own strict JSON parser in `json.hpp`.
+- `minecpp-launcher` without arguments in a terminal opens an interactive menu: play, choose version, full settings (folder, version, name, Java, memory, game folder, window size, JVM/game args), dry run. Settings live in `minecpp-launcher.cfg`.
+- `minecpp-launcher versions` lists installed versions (releases first, newest first).
+- Limits: no downloads, no Microsoft sign-in (singleplayer and offline servers only), versions before 1.19 with separately extracted natives are refused with a clear message, `os.version` rules are ignored, Windows spawning is untested. Not compiled by the author; first build is the first real test.
+- New tests: `minecpp_json_tests`, `minecpp_launch_tests`.
+
 ## 0.3.0 — Textures from your own jar, settings
 
 - The sandbox now draws with the real block textures from the player's own Minecraft client jar. On start it looks for the newest version in `~/.minecraft/versions` (or `--minecraft-dir`/`--jar`), imports it once into `minecpp-data/`, and packs `assets/minecraft/textures/block` into an atlas. Nothing is bundled or downloaded. Without a jar it falls back to the old flat colours.

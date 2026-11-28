@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(MineCPP VERSION 0.3.0 LANGUAGES CXX)
+project(MineCPP VERSION 0.4.0 LANGUAGES CXX)
 
 option(MINECPP_BUILD_TESTS "Build the native world and importer tests" ON)
 option(MINECPP_BUILD_VOXEL_PROTOTYPE "Build the experimental OpenGL voxel sandbox" ON)
@@ -34,20 +34,29 @@ add_library(minecpp_assets STATIC
 target_include_directories(minecpp_assets PUBLIC src)
 target_link_libraries(minecpp_assets PUBLIC ZLIB::ZLIB)
 
+# Version JSON parsing and java command line building for the real game.
+add_library(minecpp_launch STATIC
+    src/json.cpp
+    src/launch.cpp
+)
+target_include_directories(minecpp_launch PUBLIC src)
+
 add_executable(minecpp-launcher
     src/launcher_main.cpp
 )
-target_link_libraries(minecpp-launcher PRIVATE minecpp_import)
+target_link_libraries(minecpp-launcher PRIVATE minecpp_import minecpp_launch)
 
 if(MSVC)
     target_compile_options(minecpp_import PRIVATE /W4 /permissive-)
     target_compile_options(minecpp_region PRIVATE /W4 /permissive-)
     target_compile_options(minecpp_assets PRIVATE /W4 /permissive-)
+    target_compile_options(minecpp_launch PRIVATE /W4 /permissive-)
     target_compile_options(minecpp-launcher PRIVATE /W4 /permissive-)
 else()
     target_compile_options(minecpp_import PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp_region PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp_assets PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    target_compile_options(minecpp_launch PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
     target_compile_options(minecpp-launcher PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
 endif()
 
@@ -149,6 +158,14 @@ if(MINECPP_BUILD_TESTS)
     add_executable(minecpp_jar_locator_tests tests/jar_locator_tests.cpp)
     target_include_directories(minecpp_jar_locator_tests PRIVATE src)
     add_test(NAME minecpp_jar_locator_tests COMMAND minecpp_jar_locator_tests)
+
+    add_executable(minecpp_json_tests tests/json_tests.cpp)
+    target_link_libraries(minecpp_json_tests PRIVATE minecpp_launch)
+    add_test(NAME minecpp_json_tests COMMAND minecpp_json_tests)
+
+    add_executable(minecpp_launch_tests tests/launch_tests.cpp)
+    target_link_libraries(minecpp_launch_tests PRIVATE minecpp_launch)
+    add_test(NAME minecpp_launch_tests COMMAND minecpp_launch_tests)
 
     if(MINECPP_BUILD_VOXEL_PROTOTYPE)
         add_executable(minecpp_tests tests/world_tests.cpp)
